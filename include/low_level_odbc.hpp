@@ -22,20 +22,12 @@
 extern int cllBindVarCount;
 extern const char *cllBindVars[MAX_BIND_VARS];
 
-int cllOpenEnv( icatSessionStruct *icss );
-int cllCloseEnv( icatSessionStruct *icss );
-int cllConnect( icatSessionStruct *icss );
+int cllConnect( icatSessionStruct *icss, const std::string &host, int port, const std::string &dbname );
 int cllDisconnect( icatSessionStruct *icss );
 int cllExecSqlNoResult( icatSessionStruct *icss, const char *sql );
 int cllExecSqlWithResult( icatSessionStruct *icss, int *stmtNum, const char *sql );
 int cllExecSqlWithResultBV( icatSessionStruct *icss, int *stmtNum, const char *sql,
                             std::vector<std::string> &bindVars );
-int cllGetRow( icatSessionStruct *icss, int statementNumber );
-int cllFreeStatement( icatSessionStruct *icss, int statementNumber );
-int cllNextValueString( const char *itemName, char *outString, int maxSize );
-int cllCurrentValueString( const char *itemName, char *outString, int maxSize );
-int cllGetRowCount( icatSessionStruct *icss, int statementNumber );
-int cllCheckPending( const char *sql, int option, int dbType );
-int cllGetLastErrorMessage( char *msg, int maxChars );
+int cllNextValue( icatSessionStruct *icss, rodsLong_t &ival );
 
 #endif	/* CLL_ODBC_HPP */

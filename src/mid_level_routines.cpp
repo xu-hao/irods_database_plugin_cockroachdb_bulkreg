@@ -23,6 +23,10 @@
 
 #include <vector>
 #include <string>
+#include <boost/scope_exit.hpp>
+#include <algorithm>
+#include <tuple>
+#include <boost/range/combine.hpp>
 
 /* Size of the R_OBJT_AUDIT comment field;must match table column definition */
 #define AUDIT_COMMENT_MAX_SIZE       1000
@@ -68,49 +72,7 @@ char *cmlArraysToStrWithBind( char*         str,
 
 }
 
-int cmlDebug( int mode ) {
-    logSQL_CML = mode;
-    if ( mode > 1 ) {
-        if ( auditEnabled == 0 ) {
-            auditEnabled = 1;
-        }
-        /* This is needed for testing each sql form, which is needed for
-        the 'irodsctl devtest' to pass */
-    }
-    else {
-        if ( auditEnabled == 1 ) {
-            auditEnabled = 0;
-        }
-    }
-    return 0;
-}
-
 int cmlOpen( icatSessionStruct *icss ) {
-    int i;
-
-    /* Initialize the icss statement pointers */
-    for ( i = 0; i < MAX_NUM_OF_CONCURRENT_STMTS; i++ ) {
-        icss->stmtPtr[i] = 0;
-    }
-
-    /*
-     Set the ICAT DBMS type.  The Low Level now uses this instead of the
-     ifdefs so it can interact with either at the same time.
-     */
-    icss->databaseType = DB_TYPE_POSTGRES;
-#ifdef ORA_ICAT
-    icss->databaseType = DB_TYPE_ORACLE;
-#endif
-#ifdef MY_ICAT
-    icss->databaseType = DB_TYPE_MYSQL;
-#endif
-
-
-    /* Open Environment */
-    i = cllOpenEnv( icss );
-    if ( i != 0 ) {
-        return CAT_ENV_ERR;
-    }
 
     /* Connect to the DBMS */
     i = cllConnect( icss );
@@ -122,24 +84,12 @@ int cmlOpen( icatSessionStruct *icss ) {
 }
 
 int cmlClose( icatSessionStruct *icss ) {
-    int status, stat2;
-    static int pending = 0;
-
-    if ( pending == 1 ) {
-        return ( 0 );   /* avoid hang if stuck doing this */
-    }
-    pending = 1;
+    int status;
 
     status = cllDisconnect( icss );
 
-    stat2 = cllCloseEnv( icss );
-
-    pending = 0;
     if ( status ) {
         return CAT_DISCONNECT_ERR;
-    }
-    if ( stat2 ) {
-        return CAT_CLOSE_ENV_ERR;
     }
     return 0;
 }
@@ -159,20 +109,17 @@ int cmlExecuteNoAnswerSql( const char *sql,
 
 }
 
-int cmlGetOneRowFromSqlBV( const char *sql,
-                           char *cVal[],
-                           int cValSize[],
-                           int numOfCols,
-                           std::vector<std::string> &bindVars,
-                           icatSessionStruct *icss ) {
-    int stmtNum;
+/* like cmlGetOneRowFromSql but cVal uses space from query
+   and then caller frees it later (via cmlFreeStatement).
+   This is simplier for the caller, in some cases.   */
+int cmlGetOneRowFromSqlV2( const char *sql,
+			   result_set *& resset,
+                           const char *cVal[],
+                           int maxCols,
+                           const std::vector<std::string> &bindVars,
+                           const icatSessionStruct *icss ) {
     char updatedSql[MAX_SQL_SIZE + 1];
 
-//TODO: this should be a function, probably inside low-level icat
-#ifdef ORA_ICAT
-    strncpy( updatedSql, sql, MAX_SQL_SIZE );
-    updatedSql[MAX_SQL_SIZE] = '\0';
-#else
     strncpy( updatedSql, sql, MAX_SQL_SIZE );
     updatedSql[MAX_SQL_SIZE] = '\0';
     /* Verify there no limit or offset statement */
@@ -181,8 +128,7 @@ int cmlGetOneRowFromSqlBV( const char *sql,
         strncat( updatedSql, " limit 1", MAX_SQL_SIZE );
         rodsLog( LOG_DEBUG10, "cmlGetOneRowFromSqlBV %s", updatedSql );
     }
-#endif
-    int status = cllExecSqlWithResultBV( icss, &stmtNum, updatedSql,
+    int status = execSql( icss, &resset, updatedSql,
                                          bindVars );
     if ( status != 0 ) {
         if ( status <= CAT_ENV_ERR ) {
@@ -191,127 +137,69 @@ int cmlGetOneRowFromSqlBV( const char *sql,
         return CAT_SQL_ERR;
     }
 
-    if ( cllGetRow( icss, stmtNum ) != 0 )  {
-        cllFreeStatement( icss, stmtNum );
-        return CAT_GET_ROW_ERR;
-    }
-    if ( icss->stmtPtr[stmtNum]->numOfCols == 0 ) {
-        cllFreeStatement( icss, stmtNum );
+    if ( ! resset->has_tuple() ) {
         return CAT_NO_ROWS_FOUND;
     }
-    int numCVal = std::min( numOfCols, icss->stmtPtr[stmtNum]->numOfCols );
+
+    int numCVal = std::min(numOfCols, resset->row_size());
     for ( int j = 0; j < numCVal ; j++ ) {
-        rstrcpy( cVal[j], icss->stmtPtr[stmtNum]->resultValue[j], cValSize[j] );
+        cVal[j] = resset->get_value( j );
     }
 
-    cllFreeStatement( icss, stmtNum );
+    return numCVal;
+}
+
+int cmlGetOneRowFromSqlBV( const char *sql,
+                           char * const cVal[],
+                           const int cValSize[],
+                           int numOfCols,
+                           const std::vector<std::string> &bindVars,
+                           const icatSessionStruct *icss ) {
+  
+    std::vector<const char *> tmp;
+    std::fill(tmp.begin(), tmp.end(), nullptr);
+    
+    result_set *resset;
+    
+    int numCVal = cmlGetOneRowFromSqlV2(sql, resset, tmp.data(), numOfCols, bindVars, icss);
+
+    BOOST_SCOPE_EXIT (resset) {
+      delete resset;
+    } BOOST_SCOPE_EXIST_END
+    
+    if (numCVal < 0) {
+      return numCVal;
+    }
+    
+    tmp.resize(numCVal);
+
+    auto tmp2 = boost::combine(tmp, std::vector<char * const>(cVal, cVal + numCVal), std::vector<int>(cValSize, cValSize + numCVal));
+    
+    std::for_each(tmp2.begin(), tmp2.end(), [](const auto &tmp3) {
+      const char *str;
+      int len;
+      char *buf;
+      
+      std::tie(str, buf, len) = tmp3;
+      snprintf(buf,len,"%s",str);
+    });
+    
     return numCVal;
 
 }
 
 int cmlGetOneRowFromSql( const char *sql,
-                         char *cVal[],
-                         int cValSize[],
+                         char * const cVal[],
+                         const int cValSize[],
                          int numOfCols,
-                         icatSessionStruct *icss ) {
-    int i, j, stmtNum;
-    char updatedSql[MAX_SQL_SIZE + 1];
-
-//TODO: this should be a function, probably inside low-level icat
-#ifdef ORA_ICAT
-    strncpy( updatedSql, sql, MAX_SQL_SIZE );
-    updatedSql[MAX_SQL_SIZE] = '\0';
-#else
-    strncpy( updatedSql, sql, MAX_SQL_SIZE );
-    updatedSql[MAX_SQL_SIZE] = '\0';
-    /* Verify there no limit or offset statement */
-    if ( ( strstr( updatedSql, "limit " ) == NULL ) && ( strstr( updatedSql, "offset " ) == NULL ) ) {
-        /* add 'limit 1' for performance improvement */
-        strncat( updatedSql, " limit 1", MAX_SQL_SIZE );
-        rodsLog( LOG_DEBUG10, "cmlGetOneRowFromSql %s", updatedSql );
-    }
-#endif
-
-    std::vector<std::string> emptyBindVars;
-    i = cllExecSqlWithResultBV( icss, &stmtNum, updatedSql,
-                                emptyBindVars );
-    if ( i != 0 ) {
-        if ( i <= CAT_ENV_ERR ) {
-            return ( i );   /* already an iRODS error code */
-        }
-        return CAT_SQL_ERR;
-    }
-    i = cllGetRow( icss, stmtNum );
-    if ( i != 0 )  {
-        cllFreeStatement( icss, stmtNum );
-        return CAT_GET_ROW_ERR;
-    }
-    if ( icss->stmtPtr[stmtNum]->numOfCols == 0 ) {
-        cllFreeStatement( icss, stmtNum );
-        return CAT_NO_ROWS_FOUND;
-    }
-    for ( j = 0; j < numOfCols && j < icss->stmtPtr[stmtNum]->numOfCols ; j++ ) {
-        rstrcpy( cVal[j], icss->stmtPtr[stmtNum]->resultValue[j], cValSize[j] );
-    }
-
-    i = cllFreeStatement( icss, stmtNum );
-    return j;
-
+                         const icatSessionStruct *icss ) {
+    return cmlGetOneRowFromSql(sql, cVal, cValSize, numOfCols, std::vector<std::string>(), icss);
+    
 }
 
-/* like cmlGetOneRowFromSql but cVal uses space from query
-   and then caller frees it later (via cmlFreeStatement).
-   This is simplier for the caller, in some cases.   */
-int cmlGetOneRowFromSqlV2( const char *sql,
-                           char *cVal[],
-                           int maxCols,
-                           std::vector<std::string> &bindVars,
-                           icatSessionStruct *icss ) {
-    int i, j, stmtNum;
-    char updatedSql[MAX_SQL_SIZE + 1];
-
-//TODO: this should be a function, probably inside low-level icat
-#ifdef ORA_ICAT
-    strncpy( updatedSql, sql, MAX_SQL_SIZE );
-    updatedSql[MAX_SQL_SIZE] = '\0';
-#else
-    strncpy( updatedSql, sql, MAX_SQL_SIZE );
-    updatedSql[MAX_SQL_SIZE] = '\0';
-    /* Verify there no limit or offset statement */
-    if ( ( strstr( updatedSql, "limit " ) == NULL ) && ( strstr( updatedSql, "offset " ) == NULL ) ) {
-        /* add 'limit 1' for performance improvement */
-        strncat( updatedSql, " limit 1", MAX_SQL_SIZE );
-        rodsLog( LOG_DEBUG10, "cmlGetOneRowFromSqlV2 %s", updatedSql );
-    }
-#endif
-
-    i = cllExecSqlWithResultBV( icss, &stmtNum, updatedSql,
-                                bindVars );
-
-    if ( i != 0 ) {
-        if ( i <= CAT_ENV_ERR ) {
-            return ( i );   /* already an iRODS error code */
-        }
-        return CAT_SQL_ERR;
-    }
-    i = cllGetRow( icss, stmtNum );
-    if ( i != 0 )  {
-        cllFreeStatement( icss, stmtNum );
-        return CAT_GET_ROW_ERR;
-    }
-    if ( icss->stmtPtr[stmtNum]->numOfCols == 0 ) {
-        return CAT_NO_ROWS_FOUND;
-    }
-    for ( j = 0; j < maxCols && j < icss->stmtPtr[stmtNum]->numOfCols ; j++ ) {
-        cVal[j] = icss->stmtPtr[stmtNum]->resultValue[j];
-    }
-
-    return ( stmtNum ); /* 0 or positive is the statement number */
-}
 
 /*
- Like cmlGetOneRowFromSql but uses bind variable array (via
-    cllExecSqlWithResult).
+ Like cmlGetOneRowFromSql but uses bind variable array.
  */
 static
 int cmlGetOneRowFromSqlV3( const char *sql,
@@ -319,145 +207,70 @@ int cmlGetOneRowFromSqlV3( const char *sql,
                            int cValSize[],
                            int numOfCols,
                            icatSessionStruct *icss ) {
-    int i, j, stmtNum;
-    char updatedSql[MAX_SQL_SIZE + 1];
-
-//TODO: this should be a function, probably inside low-level icat
-#ifdef ORA_ICAT
-    strncpy( updatedSql, sql, MAX_SQL_SIZE );
-    updatedSql[MAX_SQL_SIZE] = '\0';
-#else
-    strncpy( updatedSql, sql, MAX_SQL_SIZE );
-    updatedSql[MAX_SQL_SIZE] = '\0';
-    /* Verify there no limit or offset statement */
-    if ( ( strstr( updatedSql, "limit " ) == NULL ) && ( strstr( updatedSql, "offset " ) == NULL ) ) {
-        /* add 'limit 1' for performance improvement */
-        strncat( updatedSql, " limit 1", MAX_SQL_SIZE );
-        rodsLog( LOG_DEBUG10, "cmlGetOneRowFromSqlV3 %s", updatedSql );
+    std::vector<std::string> bindVars;
+    if ( cllBindVars( bindVars ) != 0 ) {
+        return -1;
     }
-#endif
-
-    i = cllExecSqlWithResult( icss, &stmtNum, updatedSql );
-
-    if ( i != 0 ) {
-        if ( i <= CAT_ENV_ERR ) {
-            return ( i );   /* already an iRODS error code */
-        }
-        return CAT_SQL_ERR;
-    }
-    i = cllGetRow( icss, stmtNum );
-    if ( i != 0 )  {
-        cllFreeStatement( icss, stmtNum );
-        return CAT_GET_ROW_ERR;
-    }
-    if ( icss->stmtPtr[stmtNum]->numOfCols == 0 ) {
-        cllFreeStatement( icss, stmtNum );
-        return CAT_NO_ROWS_FOUND;
-    }
-    for ( j = 0; j < numOfCols && j < icss->stmtPtr[stmtNum]->numOfCols ; j++ ) {
-        rstrcpy( cVal[j], icss->stmtPtr[stmtNum]->resultValue[j], cValSize[j] );
-    }
-
-    i = cllFreeStatement( icss, stmtNum );
-    return j;
+    return cmlGetOneRowFromSql(sql, cVal, cValSize, numOfCols, bindVars, icss);
 
 }
 
 
 int cmlFreeStatement( int statementNumber, icatSessionStruct *icss ) {
-    int i;
-    i = cllFreeStatement( icss, statementNumber );
-    return i;
+    return cllFreeStatement( statementNumber );
 }
 
-
-int cmlGetFirstRowFromSql( const char *sql,
-                           int *statement,
-                           int skipCount,
-                           icatSessionStruct *icss ) {
-
-    int i = cllExecSqlWithResult( icss, statement, sql );
-
-    if ( i != 0 ) {
-        *statement = 0;
-        if ( i <= CAT_ENV_ERR ) {
-            return ( i );   /* already an iRODS error code */
-        }
-        return CAT_SQL_ERR;
-    }
-
-#ifdef ORA_ICAT
-    if ( skipCount > 0 ) {
-        for ( int j = 0; j < skipCount; j++ ) {
-            i = cllGetRow( icss, *statement );
-            if ( i != 0 )  {
-                cllFreeStatement( icss, *statement );
-                *statement = 0;
-                return CAT_GET_ROW_ERR;
-            }
-            if ( icss->stmtPtr[*statement]->numOfCols == 0 ) {
-                i = cllFreeStatement( icss, *statement );
-                *statement = 0;
-                return CAT_NO_ROWS_FOUND;
-            }
-        }
-    }
-#endif
-
-    i = cllGetRow( icss, *statement );
-    if ( i != 0 )  {
-        cllFreeStatement( icss, *statement );
-        *statement = 0;
-        return CAT_GET_ROW_ERR;
-    }
-    if ( icss->stmtPtr[*statement]->numOfCols == 0 ) {
-        i = cllFreeStatement( icss, *statement );
-        *statement = 0;
-        return CAT_NO_ROWS_FOUND;
-    }
-
-    return 0;
-}
 
 /* with bind-variables */
 int cmlGetFirstRowFromSqlBV( const char *sql,
                              std::vector<std::string> &bindVars,
                              int *statement,
                              icatSessionStruct *icss ) {
-    if ( int status = cllExecSqlWithResultBV( icss, statement, sql, bindVars ) ) {
+    int i = cllExecSqlWithResult( icss, statement, sql );
+
+    if ( i != 0 ) {
+        cllFreeStatement( *statement );
         *statement = 0;
-        if ( status <= CAT_ENV_ERR ) {
-            return status;    /* already an iRODS error code */
+        if ( i <= CAT_ENV_ERR ) {
+            return ( i );   /* already an iRODS error code */
         }
         return CAT_SQL_ERR;
     }
-    if ( cllGetRow( icss, *statement ) ) {
-        cllFreeStatement( icss, *statement );
-        *statement = 0;
-        return CAT_GET_ROW_ERR;
-    }
-    if ( icss->stmtPtr[*statement]->numOfCols == 0 ) {
-        cllFreeStatement( icss, *statement );
+
+    if ( ! result_sets[*statement]->has_row() ) {
+        cllFreeStatement( *statement );
         *statement = 0;
         return CAT_NO_ROWS_FOUND;
     }
+
     return 0;
+}
+
+int cmlGetFirstRowFromSql( const char *sql,
+                           int *statement,
+                           icatSessionStruct *icss ) {
+    std::vector<std::string> bindVars;
+    if ( cllBindVars( bindVars ) != 0 ) {
+        return -1;
+    }
+    cmlGetFirstRowFromSqlBV(sql, bindVars, statement, icss);
 }
 
 int cmlGetNextRowFromStatement( int stmtNum,
                                 icatSessionStruct *icss ) {
-    int i;
-
-    i = cllGetRow( icss, stmtNum );
-    if ( i != 0 )  {
-        cllFreeStatement( icss, stmtNum );
-        return CAT_GET_ROW_ERR;
+    int i = result_sets[stmtNum]->next_row();
+    if ( i != 0 ) {
+        cllFreeStatement( stmtNum );
+        if ( i <= CAT_ENV_ERR ) {
+            return ( i );   /* already an iRODS error code */
+        }
+        return CAT_SQL_ERR;
     }
-    if ( icss->stmtPtr[stmtNum]->numOfCols == 0 ) {
-        i = cllFreeStatement( icss, stmtNum );
+
+    if ( ! result_sets[stmtNum]->has_row() ) {
+        cllFreeStatement( stmtNum );
         return CAT_NO_ROWS_FOUND;
     }
-    return 0;
 }
 
 int cmlGetStringValueFromSql( const char *sql,
@@ -487,7 +300,7 @@ int cmlGetStringValuesFromSql( const char *sql,
                                char *cVal[],
                                int cValSize[],
                                int numberOfStringsToGet,
-                               std::vector<std::string> &bindVars,
+                               const std::vector<std::string> &bindVars,
                                icatSessionStruct *icss ) {
 
     int i = cmlGetOneRowFromSqlBV( sql, cVal, cValSize, numberOfStringsToGet,
@@ -526,28 +339,27 @@ int cmlGetMultiRowStringValuesFromSql( const char *sql,
     tsg = 0;
     pString = returnedStrings;
     for ( ;; ) {
-        i = cllGetRow( icss, stmtNum );
+        i = result_sets[stmtNum].next_row();
         if ( i != 0 )  {
-            cllFreeStatement( icss, stmtNum );
+            cllFreeStatement( stmtNum );
             if ( tsg > 0 ) {
                 return tsg;
             }
             return CAT_GET_ROW_ERR;
         }
-        if ( icss->stmtPtr[stmtNum]->numOfCols == 0 ) {
-            cllFreeStatement( icss, stmtNum );
+        if ( ! result_sets[stmtNum]->has_row() ) {
+            cllFreeStatement( stmtNum );
             if ( tsg > 0 ) {
                 return tsg;
             }
             return CAT_NO_ROWS_FOUND;
         }
         for ( j = 0; j < icss->stmtPtr[stmtNum]->numOfCols; j++ ) {
-            rstrcpy( pString, icss->stmtPtr[stmtNum]->resultValue[j],
-                     maxStringLen );
+            result_sets[stmtNum]->get_value(j, pString, maxStringLen );
             tsg++;
             pString += maxStringLen;
             if ( tsg >= maxNumberOfStringsToGet ) {
-                i = cllFreeStatement( icss, stmtNum );
+                i = cllFreeStatement( stmtNum );
                 return tsg;
             }
         }
@@ -558,7 +370,7 @@ int cmlGetMultiRowStringValuesFromSql( const char *sql,
 
 int cmlGetIntegerValueFromSql( const char *sql,
                                rodsLong_t *iVal,
-                               std::vector<std::string> &bindVars,
+                               const std::vector<std::string> &bindVars,
                                icatSessionStruct *icss ) {
     int i, cValSize;
     char *cVal[2];
@@ -653,31 +465,9 @@ int cmlModifySingleTable( const char *tableName,
 #define STR_LEN 100
 rodsLong_t
 cmlGetNextSeqVal( icatSessionStruct *icss ) {
-    char nextStr[STR_LEN];
-    char sql[STR_LEN];
     int status;
     rodsLong_t iVal;
-
-    if ( logSQL_CML != 0 ) {
-        rodsLog( LOG_SQL, "cmlGetNextSeqVal SQL 1 " );
-    }
-
-    nextStr[0] = '\0';
-
-    cllNextValueString( "R_ObjectID", nextStr, STR_LEN );
-    /* R_ObjectID is created in icatSysTables.sql as
-       the sequence item for objects */
-
-#ifdef ORA_ICAT
-    /* For Oracle, use the built-in one-row table */
-    snprintf( sql, STR_LEN, "select %s from DUAL", nextStr );
-#else
-    /* Postgres can just get the next value without a table */
-    snprintf( sql, STR_LEN, "select %s", nextStr );
-#endif
-
-    std::vector<std::string> emptyBindVars;
-    status = cmlGetIntegerValueFromSql( sql, &iVal, emptyBindVars, icss );
+    status = cmlGetIntegerValueFromSql("insert into R_ObjectID default values returning object_id", iVal, std::vector<std::string>(), icss );
     if ( status < 0 ) {
         rodsLog( LOG_NOTICE,
                  "cmlGetNextSeqVal cmlGetIntegerValueFromSql failure %d", status );
@@ -686,112 +476,16 @@ cmlGetNextSeqVal( icatSessionStruct *icss ) {
     return iVal;
 }
 
-rodsLong_t
-cmlGetCurrentSeqVal( icatSessionStruct *icss ) {
-    char nextStr[STR_LEN];
-    char sql[STR_LEN];
-    int status;
-    rodsLong_t iVal;
-
-    if ( logSQL_CML != 0 ) {
-        rodsLog( LOG_SQL, "cmlGetCurrentSeqVal S-Q-L 1 " );
-    }
-
-    nextStr[0] = '\0';
-
-    cllCurrentValueString( "R_ObjectID", nextStr, STR_LEN );
-    /* R_ObjectID is created in icatSysTables.sql as
-       the sequence item for objects */
-
-#ifdef ORA_ICAT
-    /* For Oracle, use the built-in one-row table */
-    snprintf( sql, STR_LEN, "select %s from DUAL", nextStr );
-#else
-    /* Postgres can just get the next value without a table */
-    snprintf( sql, STR_LEN, "select %s", nextStr );
-#endif
-
-    std::vector<std::string> emptyBindVars;
-    status = cmlGetIntegerValueFromSql( sql, &iVal, emptyBindVars, icss );
-    if ( status < 0 ) {
-        rodsLog( LOG_NOTICE,
-                 "cmlGetCurrentSeqVal cmlGetIntegerValueFromSql failure %d",
-                 status );
-        return status;
-    }
-    return iVal;
-}
-
 int
 cmlGetNextSeqStr( char *seqStr, int maxSeqStrLen, icatSessionStruct *icss ) {
-    char nextStr[STR_LEN];
-    char sql[STR_LEN];
     int status;
-
-    if ( logSQL_CML != 0 ) {
-        rodsLog( LOG_SQL, "cmlGetNextSeqStr SQL 1 " );
-    }
-
-    nextStr[0] = '\0';
-    cllNextValueString( "R_ObjectID", nextStr, STR_LEN );
-    /* R_ObjectID is created in icatSysTables.sql as
-       the sequence item for objects */
-
-#ifdef ORA_ICAT
-    snprintf( sql, STR_LEN, "select %s from DUAL", nextStr );
-#else
-    snprintf( sql, STR_LEN, "select %s", nextStr );
-#endif
-
-    std::vector<std::string> emptyBindVars;
-    status = cmlGetStringValueFromSql( sql, seqStr, maxSeqStrLen, emptyBindVars, icss );
+    rodsLong_t iVal;
+    status = cmlGetStringValueFromSql("insert into R_ObjectID default values returning object_id", seqStr, maxSeqStrLen, std::vector<std::string>(), icss );
     if ( status < 0 ) {
         rodsLog( LOG_NOTICE,
-                 "cmlGetNextSeqStr cmlGetStringValueFromSql failure %d", status );
+                 "cmlGetNextSeqVal cmlGetIntegerValueFromSql failure %d", status );
     }
     return status;
-}
-
-/* modifed for various tests */
-int cmlTest( icatSessionStruct *icss ) {
-    int i, cValSize;
-    char *cVal[2];
-    char cValStr[MAX_INTEGER_SIZE + 10];
-    char sql[100];
-
-    strncpy( icss->databaseUsername, "schroede", DB_USERNAME_LEN );
-    strncpy( icss->databasePassword, "", DB_PASSWORD_LEN );
-    i = cmlOpen( icss );
-    if ( i != 0 ) {
-        return i;
-    }
-
-    cVal[0] = cValStr;
-    cValSize = MAX_INTEGER_SIZE;
-    snprintf( sql, sizeof sql,
-              "select coll_id from R_COLL_MAIN where coll_name='a'" );
-
-    i = cmlGetOneRowFromSql( sql, cVal, &cValSize, 1, icss );
-    if ( i == 1 ) {
-        printf( "result = %s\n", cValStr );
-        i = 0;
-    }
-    else {
-        return i;
-    }
-
-    snprintf( sql, sizeof sql,
-              "select data_id from R_DATA_MAIN where coll_id='1' and data_name='a'" );
-    i = cmlGetOneRowFromSql( sql, cVal, &cValSize, 1, icss );
-    if ( i == 1 ) {
-        printf( "result = %s\n", cValStr );
-        i = 0;
-    }
-
-    cmlGetCurrentSeqVal( icss );
-
-    return i;
-
 }
 
 /*

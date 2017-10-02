@@ -59,7 +59,7 @@ int cmlGetNextRowFromStatement( int stmtNum,
 int cmlGetStringValueFromSql( const char *sql,
                               char *cVal,
                               int cValSize,
-                              std::vector<std::string> &bindVars,
+                              const std::vector<std::string> &bindVars,
                               icatSessionStruct *icss );
 
 int cmlGetStringValuesFromSql( const char *sql,
@@ -78,7 +78,7 @@ int cmlGetMultiRowStringValuesFromSql( const char *sql,
 
 int cmlGetIntegerValueFromSql( const char *sql,
                                rodsLong_t *iVal,
-                               std::vector<std::string> &bindVars,
+                               const std::vector<std::string> &bindVars,
                                icatSessionStruct *icss );
 
 int cmlGetIntegerValueFromSqlV3( const char *sql,

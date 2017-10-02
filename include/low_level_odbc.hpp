@@ -16,18 +16,41 @@
 
 #include <vector>
 #include <string>
+#include <libpq-fe.h>
 
 #define MAX_BIND_VARS 32000
 
+class result_set {
+public:
+  result_set(std::function<PGresult *(int, int)> _query, int _offset, int _maxrows);
+  int next_row();
+  bool has_row();
+  int row_size();
+  int get_value(int _col, char *_buf, int _len);
+  const char *get_value(int _col);
+  void clear();
+private:
+  std::function<PGresult *(int, int)> query_;
+  PGresult *res_;
+  int offset_;
+  int maxrows_;
+  int row_;
+};
+
 extern int cllBindVarCount;
 extern const char *cllBindVars[MAX_BIND_VARS];
+extern std::vector<result_set *> result_sets;
 
+int execSql(icatSessionStruct *icss, result_set **_resset, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>());
+int execSql( icatSessionStruct *icss, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>());
+int execSql( icatSessionStruct *icss, result_set **_resset, const std::function<std::string(int, int)> &_sqlgen, const std::vector<std::string> &bindVars = std::vector<std::string>(), int offset = 0, int maxrows = 256);
 int cllConnect( icatSessionStruct *icss, const std::string &host, int port, const std::string &dbname );
 int cllDisconnect( icatSessionStruct *icss );
 int cllExecSqlNoResult( icatSessionStruct *icss, const char *sql );
 int cllExecSqlWithResult( icatSessionStruct *icss, int *stmtNum, const char *sql );
 int cllExecSqlWithResultBV( icatSessionStruct *icss, int *stmtNum, const char *sql,
                             std::vector<std::string> &bindVars );
-int cllNextValue( icatSessionStruct *icss, rodsLong_t &ival );
+int cllBindVars(std::vector<std::string> &bindVars);
+int cllFreeStatement(int _resinx);
 
 #endif	/* CLL_ODBC_HPP */

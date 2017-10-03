@@ -4692,7 +4692,6 @@ irods::error db_reg_coll_by_admin_op(
     rodsLong_t iVal;
     char collIdNum[MAX_NAME_LEN];
     char nextStr[MAX_NAME_LEN];
-    char currStr[MAX_NAME_LEN];
     char currStr2[MAX_SQL_SIZE];
     int status;
     char tSQL[MAX_SQL_SIZE];
@@ -4760,7 +4759,7 @@ irods::error db_reg_coll_by_admin_op(
     snprintf( collIdNum, MAX_NAME_LEN, "%d", status );
 
     /* String to get next sequence item for objects */
-    cllNextValueString( "R_ObjectID", nextStr, MAX_NAME_LEN );
+    cmlGetNextSeqStr( nextStr, MAX_NAME_LEN, &icss );
 
     if ( logSQL != 0 ) {
         rodsLog( LOG_SQL, "chlRegCollByAdmin SQL 2" );
@@ -4823,8 +4822,7 @@ irods::error db_reg_coll_by_admin_op(
     }
 
     /* String to get current sequence item for objects */
-    cllCurrentValueString( "R_ObjectID", currStr, MAX_NAME_LEN );
-    snprintf( currStr2, MAX_SQL_SIZE, " %s ", currStr );
+    snprintf( currStr2, MAX_SQL_SIZE, " %s ", nextStr );
 
     cllBindVars[cllBindVarCount++] = userName2;
     cllBindVars[cllBindVarCount++] = zoneName;
@@ -4907,7 +4905,6 @@ irods::error db_reg_coll_op(
     rodsLong_t iVal;
     char collIdNum[MAX_NAME_LEN];
     char nextStr[MAX_NAME_LEN];
-    char currStr[MAX_NAME_LEN];
     char currStr2[MAX_SQL_SIZE];
     rodsLong_t status;
     char tSQL[MAX_SQL_SIZE];
@@ -4972,7 +4969,7 @@ irods::error db_reg_coll_op(
 
 
     /* String to get next sequence item for objects */
-    cllNextValueString( "R_ObjectID", nextStr, MAX_NAME_LEN );
+    cmlGetNextSeqStr( nextStr, MAX_NAME_LEN, &icss );
 
     getNowStr( myTime );
 
@@ -5001,8 +4998,7 @@ irods::error db_reg_coll_op(
     }
 
     /* String to get current sequence item for objects */
-    cllCurrentValueString( "R_ObjectID", currStr, MAX_NAME_LEN );
-    snprintf( currStr2, MAX_SQL_SIZE, " %s ", currStr );
+    snprintf( currStr2, MAX_SQL_SIZE, " %s ", nextStr );
 
     if ( inheritFlag ) {
         /* If inherit is set (sticky bit), then add access rows for this
@@ -5328,7 +5324,7 @@ irods::error db_reg_zone_op(
     }
 
     /* String to get next sequence item for objects */
-    cllNextValueString( "R_ObjectID", nextStr, MAX_NAME_LEN );
+    cmlGetNextSeqStr( nextStr, MAX_NAME_LEN, &icss );
 
     getNowStr( myTime );
 
@@ -8780,21 +8776,12 @@ irods::error db_mod_resc_data_paths_op(
         return ERROR( status, "failed to update path" );
     }
 
-    rows = cllGetRowCount( &icss, -1 );
-
     status =  cmlExecuteNoAnswerSql( "commit", &icss );
     if ( status != 0 ) {
         rodsLog( LOG_NOTICE,
                  "chlModResc cmlExecuteNoAnswerSql commit failure %d",
                  status );
         return ERROR( status, "commit failed" );
-    }
-
-    if ( rows > 0 ) {
-        char rowsMsg[100];
-        snprintf( rowsMsg, 100, "%d rows updated",
-                  rows );
-        status = addRErrorMsg( &_ctx.comm()->rError, 0, rowsMsg );
     }
 
     return SUCCESS();

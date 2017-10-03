@@ -16,21 +16,24 @@
 
 #include <vector>
 #include <string>
+#include <functional>
 #include <libpq-fe.h>
 
 #define MAX_BIND_VARS 32000
 
 class result_set {
 public:
-  result_set(std::function<PGresult *(int, int)> _query, int _offset, int _maxrows);
+  result_set(std::function<int(int, int, PGresult *&)> _query, int _offset, int _maxrows);
+  ~result_set();
   int next_row();
   bool has_row();
   int row_size();
-  int get_value(int _col, char *_buf, int _len);
+  int size();
+  void get_value(int _col, char *_buf, int _len);
   const char *get_value(int _col);
   void clear();
 private:
-  std::function<PGresult *(int, int)> query_;
+  std::function<int(int, int, PGresult *&)> query_;
   PGresult *res_;
   int offset_;
   int maxrows_;
@@ -50,7 +53,7 @@ int cllExecSqlNoResult( icatSessionStruct *icss, const char *sql );
 int cllExecSqlWithResult( icatSessionStruct *icss, int *stmtNum, const char *sql );
 int cllExecSqlWithResultBV( icatSessionStruct *icss, int *stmtNum, const char *sql,
                             std::vector<std::string> &bindVars );
-int cllBindVars(std::vector<std::string> &bindVars);
+int cllGetBindVars(std::vector<std::string> &bindVars);
 int cllFreeStatement(int _resinx);
 
 #endif	/* CLL_ODBC_HPP */

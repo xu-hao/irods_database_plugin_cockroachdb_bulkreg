@@ -62,13 +62,7 @@ generalInsert( generalUpdateInp_t generalUpdateInp ) {
         }
 
         doBind = 1;
-        if ( strncmp( generalUpdateInp.values.value[i],
-                      UPDATE_NEXT_SEQ_VALUE, MAX_NAME_LEN ) == 0 ) {
-            /* caller requesting a next sequence */
-            cllNextValueString( "R_ExtObjectID", nextStr, MAX_NAME_LEN );
-            nextSeqValueIndex = i;
-            doBind = 0;
-        }
+        
         if ( i == 0 ) {
             firstTableName = tableName;
             rstrcat( tSQL, tableName, MAX_SQL_SIZE );

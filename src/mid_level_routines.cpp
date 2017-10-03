@@ -72,10 +72,10 @@ char *cmlArraysToStrWithBind( char*         str,
 
 }
 
-int cmlOpen( icatSessionStruct *icss ) {
+int cmlOpen( icatSessionStruct *icss, const std::string &host, int port, const std::string &dbname ) {
 
     /* Connect to the DBMS */
-    i = cllConnect( icss );
+    int i = cllConnect( icss, host, port, dbname );
     if ( i != 0 ) {
         return CAT_CONNECT_ERR;
     }
@@ -137,11 +137,11 @@ int cmlGetOneRowFromSqlV2( const char *sql,
         return CAT_SQL_ERR;
     }
 
-    if ( ! resset->has_tuple() ) {
+    if ( ! resset->has_row() ) {
         return CAT_NO_ROWS_FOUND;
     }
 
-    int numCVal = std::min(numOfCols, resset->row_size());
+    int numCVal = std::min(maxCols, resset->row_size());
     for ( int j = 0; j < numCVal ; j++ ) {
         cVal[j] = resset->get_value( j );
     }
@@ -165,7 +165,7 @@ int cmlGetOneRowFromSqlBV( const char *sql,
 
     BOOST_SCOPE_EXIT (resset) {
       delete resset;
-    } BOOST_SCOPE_EXIST_END
+    } BOOST_SCOPE_EXIT_END
     
     if (numCVal < 0) {
       return numCVal;
@@ -180,7 +180,7 @@ int cmlGetOneRowFromSqlBV( const char *sql,
       int len;
       char *buf;
       
-      std::tie(str, buf, len) = tmp3;
+      boost::tie(str, buf, len) = tmp3;
       snprintf(buf,len,"%s",str);
     });
     
@@ -193,7 +193,7 @@ int cmlGetOneRowFromSql( const char *sql,
                          const int cValSize[],
                          int numOfCols,
                          const icatSessionStruct *icss ) {
-    return cmlGetOneRowFromSql(sql, cVal, cValSize, numOfCols, std::vector<std::string>(), icss);
+    return cmlGetOneRowFromSqlBV(sql, cVal, cValSize, numOfCols, std::vector<std::string>(), icss);
     
 }
 
@@ -208,10 +208,10 @@ int cmlGetOneRowFromSqlV3( const char *sql,
                            int numOfCols,
                            icatSessionStruct *icss ) {
     std::vector<std::string> bindVars;
-    if ( cllBindVars( bindVars ) != 0 ) {
+    if ( cllGetBindVars( bindVars ) != 0 ) {
         return -1;
     }
-    return cmlGetOneRowFromSql(sql, cVal, cValSize, numOfCols, bindVars, icss);
+    return cmlGetOneRowFromSqlBV(sql, cVal, cValSize, numOfCols, bindVars, icss);
 
 }
 
@@ -250,7 +250,7 @@ int cmlGetFirstRowFromSql( const char *sql,
                            int *statement,
                            icatSessionStruct *icss ) {
     std::vector<std::string> bindVars;
-    if ( cllBindVars( bindVars ) != 0 ) {
+    if ( cllGetBindVars( bindVars ) != 0 ) {
         return -1;
     }
     cmlGetFirstRowFromSqlBV(sql, bindVars, statement, icss);
@@ -339,7 +339,7 @@ int cmlGetMultiRowStringValuesFromSql( const char *sql,
     tsg = 0;
     pString = returnedStrings;
     for ( ;; ) {
-        i = result_sets[stmtNum].next_row();
+        i = result_sets[stmtNum]->next_row();
         if ( i != 0 )  {
             cllFreeStatement( stmtNum );
             if ( tsg > 0 ) {
@@ -467,7 +467,7 @@ rodsLong_t
 cmlGetNextSeqVal( icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal;
-    status = cmlGetIntegerValueFromSql("insert into R_ObjectID default values returning object_id", iVal, std::vector<std::string>(), icss );
+    status = cmlGetIntegerValueFromSql("insert into R_ObjectID default values returning object_id", &iVal, std::vector<std::string>(), icss );
     if ( status < 0 ) {
         rodsLog( LOG_NOTICE,
                  "cmlGetNextSeqVal cmlGetIntegerValueFromSql failure %d", status );
@@ -1139,11 +1139,7 @@ int checkObjIdByTicket( const char *dataId, const char *accessLevel,
                 if ( status != 0 ) {
                     return status;
                 }
-#ifndef ORA_ICAT
-                /* as with auditing, do a commit on disconnect if needed */
-                cllCheckPending( "", 2, icss->databaseType );
-#endif
-            }
+	    }
             previousDataId1 = intDataId;
         }
     }
@@ -1169,10 +1165,6 @@ int checkObjIdByTicket( const char *dataId, const char *accessLevel,
             if ( status != 0 ) {
                 return status;
             }
-#ifndef ORA_ICAT
-            /* as with auditing, do a commit on disconnect if needed*/
-            cllCheckPending( "", 2, icss->databaseType );
-#endif
         }
         previousDataId2 = intDataId;
     }
@@ -1240,10 +1232,6 @@ cmlTicketUpdateWriteBytes( const char *ticketStr,
     if ( status != 0 ) {
         return status;
     }
-#ifndef ORA_ICAT
-    /* as with auditing, do a commit on disconnect if needed */
-    cllCheckPending( "", 2, icss->databaseType );
-#endif
     return 0;
 }
 
@@ -1414,14 +1402,6 @@ cmlAudit1( int actionId, const char *clientUser, const char *zone, const char *t
     if ( status != 0 ) {
         rodsLog( LOG_NOTICE, "cmlAudit1 insert failure %d", status );
     }
-#ifdef ORA_ICAT
-#else
-    else {
-        cllCheckPending( "", 2, icss->databaseType );
-        /* Indicate that this was an audit SQL and so should be
-        committed on disconnect if still pending. */
-    }
-#endif
     return status;
 }
 
@@ -1458,14 +1438,6 @@ cmlAudit2( int actionId, const char *dataId, const char *userName, const char *z
     if ( status != 0 ) {
         rodsLog( LOG_NOTICE, "cmlAudit2 insert failure %d", status );
     }
-#ifdef ORA_ICAT
-#else
-    else {
-        cllCheckPending( "", 2,  icss->databaseType );
-        /* Indicate that this was an audit SQL and so should be
-        committed on disconnect if still pending. */
-    }
-#endif
 
     return status;
 }
@@ -1526,15 +1498,7 @@ cmlAudit3( int actionId, const char *dataId, const char *userName, const char *z
     if ( status != 0 ) {
         rodsLog( LOG_NOTICE, "cmlAudit3 insert failure %d", status );
     }
-#ifdef ORA_ICAT
-#else
-    else {
-        cllCheckPending( "", 2,  icss->databaseType );
-        /* Indicate that this was an audit SQL and so should be
-        committed on disconnect if still pending. */
-    }
-#endif
-
+    
     return status;
 }
 
@@ -1608,14 +1572,6 @@ cmlAudit4( int actionId, const char *sql, const char *sqlParm, const char *userN
     if ( status != 0 ) {
         rodsLog( LOG_NOTICE, "cmlAudit4 insert failure %d", status );
     }
-#ifdef ORA_ICAT
-#else
-    else {
-        cllCheckPending( "", 2,  icss->databaseType );
-        /* Indicate that this was an audit SQL and so should be
-        committed on disconnect if still pending. */
-    }
-#endif
 
     return status;
 }
@@ -1653,13 +1609,5 @@ cmlAudit5( int actionId, const char *objId, const char *userId, const char *comm
     if ( status != 0 ) {
         rodsLog( LOG_NOTICE, "cmlAudit5 insert failure %d", status );
     }
-#ifdef ORA_ICAT
-#else
-    else {
-        cllCheckPending( "", 2,  icss->databaseType );
-        /* Indicate that this was an audit SQL and so should be
-        committed on disconnect if still pending. */
-    }
-#endif
     return status;
 }

@@ -2284,7 +2284,7 @@ int chl_gen_query_access_control_setup_impl(
         recursiveCall = 0; /* avoid warning */
 #else
         if ( genQueryInp.options & RETURN_TOTAL_ROW_COUNT ) {
-            i = cllGetRowCount( icss, statementNum );
+            i = result_sets[statementNum]->size();
             if ( i >= 0 ) {
                 result->totalRowCount = i + genQueryInp.rowOffset;
             }

@@ -56,6 +56,38 @@ int cllBindVarCountPrev = 0; /* cllBindVarCount earlier in processing */
 #include <string>
 #include <libpq-fe.h>
 
+/*
+  call SQLError to get error information and log it
+*/
+int
+logPsgError( int level, PGresult *res ) {
+    const char *sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
+    const char *psgErrorMsg = PQresultErrorField(res, PG_DIAG_MESSAGE_PRIMARY);
+
+    int errorVal = -2;
+            if ( strcmp( ( char * )sqlstate, "23505" ) == 0 &&
+                    strstr( ( char * )psgErrorMsg, "duplicate key" ) ) {
+                errorVal = CATALOG_ALREADY_HAS_ITEM_BY_THAT_NAME;
+            }
+    
+        rodsLog( level, "SQLSTATE: %s", sqlstate );
+        rodsLog( level, "SQL Error message: %s", psgErrorMsg );
+    
+    return errorVal;
+}
+
+/*
+  Log the bind variables from the global array (after an error)
+*/
+void
+logBindVariables( int level, const std::vector<std::string> &bindVars ) {
+    for ( int i = 0; i < bindVars.size(); i++ ) {
+        char tmpStr[TMP_STR_LEN + 2];
+        snprintf( tmpStr, TMP_STR_LEN, "bindVar[%d]=%s", i + 1, bindVars[i].c_str() );
+        rodsLog( level, "%s", tmpStr );
+    }
+}
+
 result_set::result_set(std::function<int(int, int, PGresult *&)> _query, int _offset, int _maxrows) : query_(_query), offset_(_offset), maxrows_(_maxrows), res_(nullptr), row_(0) {
 }
 
@@ -64,7 +96,7 @@ result_set::~result_set() {
 }
  
 int result_set::next_row() {
-   if(res_ == nullptr || row_ >= PQntuples(res)) {
+   if(res_ == nullptr || row_ >= PQntuples(res_)) {
      row_ = 0;
      return query_(offset_, maxrows_, res_);
    } else {
@@ -81,7 +113,11 @@ int result_set::row_size() {
    return PQnfields(res_); 
 }
   
-int result_set::get_value(int _col, char *_buf, int _len) {
+int result_set::size() {
+   return PQntuples(res_); 
+}
+  
+void result_set::get_value(int _col, char *_buf, int _len) {
   snprintf(_buf, _len, "%s", get_value(_col));
 }
 
@@ -96,13 +132,13 @@ void result_set::clear() {
 }
 
 int
-execSql(icatSessionStruct *icss, result_set **_resset, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>()) {
+execSql(icatSessionStruct *icss, result_set **_resset, const std::string &sql, const std::vector<std::string> &bindVars) {
     return execSql(icss, _resset, [sql](int,int){return sql;}, bindVars);
 }
 
 
 int
-execSql( icatSessionStruct *icss, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>()) {
+execSql( icatSessionStruct *icss, const std::string &sql, const std::vector<std::string> &bindVars) {
     result_set *resset;
     int status = execSql(icss, &resset, sql, bindVars);
     delete resset;
@@ -110,21 +146,21 @@ execSql( icatSessionStruct *icss, const std::string &sql, const std::vector<std:
 }
 
 int
-execSql( icatSessionStruct *icss, result_set **_resset, const std::function<std::string(int, int)> &_sqlgen, const std::vector<std::string> &bindVars = std::vector<std::string>(), int offset = 0, int maxrows = 256) {
+execSql( icatSessionStruct *icss, result_set **_resset, const std::function<std::string(int, int)> &_sqlgen, const std::vector<std::string> &bindVars, int offset, int maxrows) {
 
     PGconn *conn = (PGconn *) icss->connectPtr;
 
-    auto resset = new result_set([conn, _sqlgen, bindVars](offset, maxrows) {
+    auto resset = new result_set([conn, _sqlgen, bindVars](int offset, int maxrows, PGresult *&res) {
       auto sql = _sqlgen(offset, maxrows);
       rodsLog( LOG_DEBUG10, "%s", sql.c_str() );
       rodsLogSql( sql.c_str() );
     
       std::vector<const char *> bs;
-      std::transform(bindVars.begin(), bindVars.end(), std::back_inserter(bs), std::string::c_str);
+      std::transform(bindVars.begin(), bindVars.end(), std::back_inserter(bs), [](const std::string &str){return str.c_str();});
       
-      auto res = PQexecParams( conn, sql.c_str(), bs.size(), NULL, bs.data(), NULL, NULL, 0 );
+      res = PQexecParams( conn, sql.c_str(), bs.size(), NULL, bs.data(), NULL, NULL, 0 );
 
-      ResultStatusType stat = PQresultStatus(res);
+      ExecStatusType stat = PQresultStatus(res);
       rodsLogSqlResult( PQresStatus(stat) );
 
       int result = 0;
@@ -141,7 +177,7 @@ execSql( icatSessionStruct *icss, result_set **_resset, const std::function<std:
       else {
 	  logBindVariables( LOG_NOTICE, bindVars );
 	  rodsLog( LOG_NOTICE, "_cllExecSqlNoResult: SQLExecDirect error: %d sql:%s",
-		  PQresStatus(stat), sql );
+		  PQresStatus(stat), sql.c_str() );
 	  result = logPsgError( LOG_NOTICE, res );
 	  PQclear(res);
 	  res = NULL;
@@ -169,25 +205,6 @@ std::vector<result_set *> result_sets;
 
 static int didBegin = 0;
 
-/*
-  call SQLError to get error information and log it
-*/
-int
-logPsgError( int level, PGresult *res ) {
-    const char *sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
-    const char *psgErrorMsg = PQresultErrorField(res, PG_DIAG_MESSAGE_PRIMARY);
-
-    int errorVal = -2;
-            if ( strcmp( ( char * )sqlstate, "23505" ) == 0 &&
-                    strstr( ( char * )psgErrorMsg, "duplicate key" ) ) {
-                errorVal = CATALOG_ALREADY_HAS_ITEM_BY_THAT_NAME;
-            }
-    
-        rodsLog( level, "SQLSTATE: %s", sqlstate );
-        rodsLog( level, "SQL Error message: %s", psgErrorMsg );
-    
-    return errorVal;
-}
 
 /*
   Connect to the DBMS.
@@ -204,9 +221,9 @@ cllConnect( icatSessionStruct *icss, const std::string &host, int port, const st
         rodsLog( LOG_ERROR, "cllConnect: SQLConnect failed: %d", stat );
         rodsLog( LOG_ERROR,
                  "cllConnect: SQLConnect failed:host=%s,port=%d,dbname=%s,user=%s,pass=XXXXX\n",
-                 host,
+                 host.c_str(),
 		 port,
-		 dbname,
+		 dbname.c_str(),
                  icss->databaseUsername );
         rodsLog( LOG_ERROR, "cllConnect: %s \n", PQerrorMessage(conn) );
 
@@ -233,21 +250,9 @@ cllDisconnect( icatSessionStruct *icss ) {
 }
 
 /*
-  Log the bind variables from the global array (after an error)
-*/
-void
-logBindVariables( int level, const std::vector<std::string> &bindVars ) {
-    for ( int i = 0; i < bindVars.size(); i++ ) {
-        char tmpStr[TMP_STR_LEN + 2];
-        snprintf( tmpStr, TMP_STR_LEN, "bindVar[%d]=%s", i + 1, bindVars[i].c_str() );
-        rodsLog( level, "%s", tmpStr );
-    }
-}
-
-/*
   Bind variables from the global array.
 */
-int cllBindVars(std::vector<std::string> &bindVars)
+int cllGetBindVars(std::vector<std::string> &bindVars) {
 
     int myBindVarCount = cllBindVarCount;
     cllBindVarCountPrev = cllBindVarCount; /* save in case we need to log error */
@@ -271,7 +276,6 @@ int cllBindVars(std::vector<std::string> &bindVars)
 int
 cllExecSqlNoResult( icatSessionStruct *icss, const char *sql ) {
 
-    std::vector<const char *> bindVars;
 
     if ( strncmp( sql, "commit", 6 ) == 0 ||
             strncmp( sql, "rollback", 8 ) == 0 ) {
@@ -290,7 +294,7 @@ cllExecSqlNoResult( icatSessionStruct *icss, const char *sql ) {
         didBegin = 1;
     }
     std::vector<std::string> bindVars;
-    if ( bindTheVariables( bindVars ) != 0 ) {
+    if ( cllGetBindVars( bindVars ) != 0 ) {
 	return -1;
     }
     return execSql( icss, sql, bindVars);
@@ -331,8 +335,8 @@ cllExecSqlWithResultBV(
 */
 int
 cllExecSqlWithResult( icatSessionStruct *icss, int *_resinx, const char *sql ) {
-    std::vector<const char *> bindVars;
-    if ( cllBindVars( bindVars ) != 0 ) {
+    std::vector<std::string> bindVars;
+    if ( cllGetBindVars( bindVars ) != 0 ) {
         return -1;
     }
     

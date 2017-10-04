@@ -41,7 +41,7 @@ extern int auditEnabled;  /* Set this to 2 and rebuild to enable iRODS
 int checkObjIdByTicket( const char *dataId, const char *accessLevel,
                         const char *ticketStr, const char *ticketHost,
                         const char *userName, const char *userZone,
-                        icatSessionStruct *icss );
+                        const icatSessionStruct *icss );
 
 /*
   Convert the intput arrays to a string and add bind variables
@@ -96,7 +96,7 @@ int cmlClose( icatSessionStruct *icss ) {
 
 
 int cmlExecuteNoAnswerSql( const char *sql,
-                           icatSessionStruct *icss ) {
+                           const icatSessionStruct *icss ) {
     int i;
     i = cllExecSqlNoResult( icss, sql );
     if ( i ) {
@@ -206,7 +206,7 @@ int cmlGetOneRowFromSqlV3( const char *sql,
                            char *cVal[],
                            int cValSize[],
                            int numOfCols,
-                           icatSessionStruct *icss ) {
+                           const icatSessionStruct *icss ) {
     std::vector<std::string> bindVars;
     if ( cllGetBindVars( bindVars ) != 0 ) {
         return -1;
@@ -216,16 +216,16 @@ int cmlGetOneRowFromSqlV3( const char *sql,
 }
 
 
-int cmlFreeStatement( int statementNumber, icatSessionStruct *icss ) {
+int cmlFreeStatement( int statementNumber, const icatSessionStruct *icss ) {
     return cllFreeStatement( statementNumber );
 }
 
 
 /* with bind-variables */
 int cmlGetFirstRowFromSqlBV( const char *sql,
-                             std::vector<std::string> &bindVars,
+                             const std::vector<std::string> &bindVars,
                              int *statement,
-                             icatSessionStruct *icss ) {
+                             const icatSessionStruct *icss ) {
     int i = cllExecSqlWithResult( icss, statement, sql );
 
     if ( i != 0 ) {
@@ -248,16 +248,16 @@ int cmlGetFirstRowFromSqlBV( const char *sql,
 
 int cmlGetFirstRowFromSql( const char *sql,
                            int *statement,
-                           icatSessionStruct *icss ) {
+                           const icatSessionStruct *icss ) {
     std::vector<std::string> bindVars;
     if ( cllGetBindVars( bindVars ) != 0 ) {
         return -1;
     }
-    cmlGetFirstRowFromSqlBV(sql, bindVars, statement, icss);
+    return cmlGetFirstRowFromSqlBV(sql, bindVars, statement, icss);
 }
 
 int cmlGetNextRowFromStatement( int stmtNum,
-                                icatSessionStruct *icss ) {
+                                const icatSessionStruct *icss ) {
     int i = result_sets[stmtNum]->next_row();
     if ( i != 0 ) {
         cllFreeStatement( stmtNum );
@@ -271,13 +271,14 @@ int cmlGetNextRowFromStatement( int stmtNum,
         cllFreeStatement( stmtNum );
         return CAT_NO_ROWS_FOUND;
     }
+    return 0;
 }
 
 int cmlGetStringValueFromSql( const char *sql,
                               char *cVal,
                               int cValSize,
-                              std::vector<std::string> &bindVars,
-                              icatSessionStruct *icss ) {
+                              const std::vector<std::string> &bindVars,
+                              const icatSessionStruct *icss ) {
     int status;
     char *cVals[2];
     int iVals[2];
@@ -297,11 +298,11 @@ int cmlGetStringValueFromSql( const char *sql,
 }
 
 int cmlGetStringValuesFromSql( const char *sql,
-                               char *cVal[],
-                               int cValSize[],
+                               char * const cVal[],
+                               const int cValSize[],
                                int numberOfStringsToGet,
                                const std::vector<std::string> &bindVars,
-                               icatSessionStruct *icss ) {
+                               const icatSessionStruct *icss ) {
 
     int i = cmlGetOneRowFromSqlBV( sql, cVal, cValSize, numberOfStringsToGet,
                                    bindVars, icss );
@@ -318,8 +319,8 @@ int cmlGetMultiRowStringValuesFromSql( const char *sql,
                                        char *returnedStrings,
                                        int maxStringLen,
                                        int maxNumberOfStringsToGet,
-                                       std::vector<std::string> &bindVars,
-                                       icatSessionStruct *icss ) {
+                                       const std::vector<std::string> &bindVars,
+                                       const icatSessionStruct *icss ) {
 
     int i, j, stmtNum;
     int tsg; /* total strings gotten */
@@ -371,7 +372,7 @@ int cmlGetMultiRowStringValuesFromSql( const char *sql,
 int cmlGetIntegerValueFromSql( const char *sql,
                                rodsLong_t *iVal,
                                const std::vector<std::string> &bindVars,
-                               icatSessionStruct *icss ) {
+                               const icatSessionStruct *icss ) {
     int i, cValSize;
     char *cVal[2];
     char cValStr[MAX_INTEGER_SIZE + 10];
@@ -394,7 +395,7 @@ int cmlGetIntegerValueFromSql( const char *sql,
 /* Like cmlGetIntegerValueFromSql but uses bind-variable array */
 int cmlGetIntegerValueFromSqlV3( const char *sql,
                                  rodsLong_t *iVal,
-                                 icatSessionStruct *icss ) {
+                                 const icatSessionStruct *icss ) {
     int i, cValSize;
     char *cVal[2];
     char cValStr[MAX_INTEGER_SIZE + 10];
@@ -413,7 +414,7 @@ int cmlGetIntegerValueFromSqlV3( const char *sql,
     return i;
 }
 
-int cmlCheckNameToken( const char *nameSpace, const char *tokenName, icatSessionStruct *icss ) {
+int cmlCheckNameToken( const char *nameSpace, const char *tokenName, const icatSessionStruct *icss ) {
 
     rodsLong_t iVal;
     int status;
@@ -438,7 +439,7 @@ int cmlModifySingleTable( const char *tableName,
                           const char *whereValues[],
                           int numOfUpdates,
                           int numOfConds,
-                          icatSessionStruct *icss ) {
+                          const icatSessionStruct *icss ) {
     char tsql[MAX_SQL_SIZE];
     int i, l;
     char *rsql;
@@ -464,7 +465,7 @@ int cmlModifySingleTable( const char *tableName,
 
 #define STR_LEN 100
 rodsLong_t
-cmlGetNextSeqVal( icatSessionStruct *icss ) {
+cmlGetNextSeqVal( const icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal;
     status = cmlGetIntegerValueFromSql("insert into R_ObjectID default values returning object_id", &iVal, std::vector<std::string>(), icss );
@@ -477,7 +478,7 @@ cmlGetNextSeqVal( icatSessionStruct *icss ) {
 }
 
 int
-cmlGetNextSeqStr( char *seqStr, int maxSeqStrLen, icatSessionStruct *icss ) {
+cmlGetNextSeqStr( char *seqStr, int maxSeqStrLen, const icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal;
     status = cmlGetStringValueFromSql("insert into R_ObjectID default values returning object_id", seqStr, maxSeqStrLen, std::vector<std::string>(), icss );
@@ -494,7 +495,7 @@ cmlGetNextSeqStr( char *seqStr, int maxSeqStrLen, icatSessionStruct *icss ) {
 */
 rodsLong_t
 cmlCheckResc( const char *rescName, const char *userName, const char *userZone, const char *accessLevel,
-              icatSessionStruct *icss ) {
+              const icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal;
 
@@ -540,7 +541,7 @@ cmlCheckResc( const char *rescName, const char *userName, const char *userZone, 
 */
 rodsLong_t
 cmlCheckDir( const char *dirName, const char *userName, const char *userZone, const char *accessLevel,
-             icatSessionStruct *icss ) {
+             const icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal;
 
@@ -589,7 +590,7 @@ rodsLong_t
 cmlCheckDirAndGetInheritFlag( const char *dirName, const char *userName, const char *userZone,
                               const char *accessLevel, int *inheritFlag,
                               const char *ticketStr, const char *ticketHost,
-                              icatSessionStruct *icss ) {
+                              const icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal = 0;
 
@@ -680,7 +681,7 @@ cmlCheckDirAndGetInheritFlag( const char *dirName, const char *userName, const c
 */
 rodsLong_t
 cmlCheckDirId( const char *dirId, const char *userName, const char *userZone,
-               const char *accessLevel, icatSessionStruct *icss ) {
+               const char *accessLevel, const icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal;
 
@@ -723,7 +724,7 @@ cmlCheckDirId( const char *dirId, const char *userName, const char *userZone,
 */
 rodsLong_t
 cmlCheckDirOwn( const char *dirName, const char *userName, const char *userZone,
-                icatSessionStruct *icss ) {
+                const icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal;
 
@@ -753,7 +754,7 @@ cmlCheckDirOwn( const char *dirName, const char *userName, const char *userZone,
 rodsLong_t
 cmlCheckDataObjOnly( const char *dirName, const char *dataName,
                      const char *userName, const char *userZone,
-                     const char *accessLevel, icatSessionStruct *icss ) {
+                     const char *accessLevel, const icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal;
 
@@ -799,7 +800,7 @@ cmlCheckDataObjOnly( const char *dirName, const char *dataName,
 */
 rodsLong_t
 cmlCheckDataObjOwn( const char *dirName, const char *dataName, const char *userName,
-                    const char *userZone, icatSessionStruct *icss ) {
+                    const char *userZone, const icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal, collId;
     char collIdStr[MAX_NAME_LEN];
@@ -838,7 +839,7 @@ cmlCheckDataObjOwn( const char *dirName, const char *dataName, const char *userN
 
 
 int cmlCheckUserInGroup( const char *userName, const char *userZone,
-                         const char *groupName, icatSessionStruct *icss ) {
+                         const char *groupName, const icatSessionStruct *icss ) {
     int status;
     char sVal[MAX_NAME_LEN];
     rodsLong_t iVal;
@@ -881,7 +882,7 @@ int cmlCheckUserInGroup( const char *userName, const char *userZone,
 int
 cmlCheckTicketRestrictions( const char *ticketId, const char *ticketHost,
                             const char *userName, const char *userZone,
-                            icatSessionStruct *icss ) {
+                            const icatSessionStruct *icss ) {
     int status;
     int stmtNum;
     int hostOK = 0;
@@ -1005,7 +1006,7 @@ cmlCheckTicketRestrictions( const char *ticketId, const char *ticketHost,
 int checkObjIdByTicket( const char *dataId, const char *accessLevel,
                         const char *ticketStr, const char *ticketHost,
                         const char *userName, const char *userZone,
-                        icatSessionStruct *icss ) {
+                        const icatSessionStruct *icss ) {
     int status, i;
     char *cVal[10];
     int iVal[10];
@@ -1080,11 +1081,6 @@ int checkObjIdByTicket( const char *dataId, const char *accessLevel,
 
     if ( strncmp( ticketId, prevTicketId, sizeof( prevTicketId ) ) != 0 ) {
         snprintf( prevTicketId, sizeof( prevTicketId ), "%s", ticketId );
-        status = cmlAudit3( AU_USE_TICKET, ticketId, userName, userZone,
-                            ticketStr, icss );
-        if ( status != 0 ) {
-            return status;
-        }
     }
 
     if ( ticketExpiry[0] != '\0' ) {
@@ -1174,7 +1170,7 @@ int checkObjIdByTicket( const char *dataId, const char *accessLevel,
 int
 cmlTicketUpdateWriteBytes( const char *ticketStr,
                            const char *dataSize, const char *objectId,
-                           icatSessionStruct *icss ) {
+                           const icatSessionStruct *icss ) {
     int status, i;
     char *cVal[10];
     int iVal[10];
@@ -1244,7 +1240,7 @@ cmlTicketUpdateWriteBytes( const char *ticketStr,
 */
 int cmlCheckDataObjId( const char *dataId, const char *userName,  const char *zoneName,
                        const char *accessLevel, const char *ticketStr, const char *ticketHost,
-                       icatSessionStruct *icss ) {
+                       const icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal;
 
@@ -1278,7 +1274,6 @@ int cmlCheckDataObjId( const char *dataId, const char *userName,  const char *zo
     if ( status != 0 ) {
         return CAT_NO_ACCESS_PERMISSION;
     }
-    cmlAudit2( AU_ACCESS_GRANTED, dataId, userName, zoneName, accessLevel, icss );
     return status;
 }
 
@@ -1287,7 +1282,7 @@ int cmlCheckDataObjId( const char *dataId, const char *userName,  const char *zo
  * type 'groupadmin' and in some cases a member of the specified group.
  */
 int cmlCheckGroupAdminAccess( const char *userName, const char *userZone,
-                              const char *groupName, icatSessionStruct *icss ) {
+                              const char *groupName, const icatSessionStruct *icss ) {
     int status;
     char sVal[MAX_NAME_LEN];
     rodsLong_t iVal;
@@ -1342,7 +1337,7 @@ int cmlCheckGroupAdminAccess( const char *userName, const char *userZone,
  Get the number of users who are members of a user group.
  This is used in some groupadmin access checks.
  */
-int cmlGetGroupMemberCount( const char *groupName, icatSessionStruct *icss ) {
+int cmlGetGroupMemberCount( const char *groupName, const icatSessionStruct *icss ) {
 
     rodsLong_t iVal;
     int status;
@@ -1370,7 +1365,7 @@ have different input arguments.
  */
 int
 cmlAudit1( int actionId, const char *clientUser, const char *zone, const char *targetUser,
-           const char *comment, icatSessionStruct *icss ) {
+           const char *comment, const icatSessionStruct *icss ) {
     char myTime[50];
     char actionIdStr[50];
     int status;
@@ -1407,7 +1402,7 @@ cmlAudit1( int actionId, const char *clientUser, const char *zone, const char *t
 
 int
 cmlAudit2( int actionId, const char *dataId, const char *userName, const char *zoneName,
-           const char *accessLevel, icatSessionStruct *icss ) {
+           const char *accessLevel, const icatSessionStruct *icss ) {
     char myTime[50];
     char actionIdStr[50];
     int status;
@@ -1445,7 +1440,7 @@ cmlAudit2( int actionId, const char *dataId, const char *userName, const char *z
 
 int
 cmlAudit3( int actionId, const char *dataId, const char *userName, const char *zoneName,
-           const char *comment, icatSessionStruct *icss ) {
+           const char *comment, const icatSessionStruct *icss ) {
     char myTime[50];
     char actionIdStr[50];
     int status;
@@ -1505,7 +1500,7 @@ cmlAudit3( int actionId, const char *dataId, const char *userName, const char *z
 
 int
 cmlAudit4( int actionId, const char *sql, const char *sqlParm, const char *userName,
-           const char *zoneName, const char *comment, icatSessionStruct *icss ) {
+           const char *zoneName, const char *comment, const icatSessionStruct *icss ) {
     char myTime[50];
     char actionIdStr[50];
     char myComment[AUDIT_COMMENT_MAX_SIZE + 10];
@@ -1582,7 +1577,7 @@ cmlAudit4( int actionId, const char *sql, const char *sqlParm, const char *userN
  */
 int
 cmlAudit5( int actionId, const char *objId, const char *userId, const char *comment,
-           icatSessionStruct *icss ) {
+           const icatSessionStruct *icss ) {
     char myTime[50];
     char actionIdStr[50];
     int status;

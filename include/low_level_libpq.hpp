@@ -12,7 +12,7 @@
 #include "sqlext.h"
 
 #include "rods.h"
-#include "mid_level.hpp"
+#include "icatStructs.hpp"
 
 #include <vector>
 #include <string>
@@ -44,15 +44,15 @@ extern int cllBindVarCount;
 extern const char *cllBindVars[MAX_BIND_VARS];
 extern std::vector<result_set *> result_sets;
 
-int execSql(icatSessionStruct *icss, result_set **_resset, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>());
-int execSql( icatSessionStruct *icss, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>());
-int execSql( icatSessionStruct *icss, result_set **_resset, const std::function<std::string(int, int)> &_sqlgen, const std::vector<std::string> &bindVars = std::vector<std::string>(), int offset = 0, int maxrows = 256);
+int execSql(const icatSessionStruct *icss, result_set **_resset, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>());
+int execSql( const icatSessionStruct *icss, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>());
+int execSql( const icatSessionStruct *icss, result_set **_resset, const std::function<std::string(int, int)> &_sqlgen, const std::vector<std::string> &bindVars = std::vector<std::string>(), int offset = 0, int maxrows = 256);
 int cllConnect( icatSessionStruct *icss, const std::string &host, int port, const std::string &dbname );
 int cllDisconnect( icatSessionStruct *icss );
-int cllExecSqlNoResult( icatSessionStruct *icss, const char *sql );
-int cllExecSqlWithResult( icatSessionStruct *icss, int *stmtNum, const char *sql );
-int cllExecSqlWithResultBV( icatSessionStruct *icss, int *stmtNum, const char *sql,
-                            std::vector<std::string> &bindVars );
+int cllExecSqlNoResult( const icatSessionStruct *icss, const char *sql );
+int cllExecSqlWithResult( const icatSessionStruct *icss, int *stmtNum, const char *sql );
+int cllExecSqlWithResultBV( const icatSessionStruct *icss, int *stmtNum, const char *sql,
+                            const std::vector<std::string> &bindVars );
 int cllGetBindVars(std::vector<std::string> &bindVars);
 int cllFreeStatement(int _resinx);
 

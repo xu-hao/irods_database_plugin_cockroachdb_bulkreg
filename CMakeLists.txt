@@ -74,7 +74,7 @@ foreach(PLUGIN ${IRODS_DATABASE_PLUGINS})
     ${CMAKE_SOURCE_DIR}/src/general_update.cpp
     ${CMAKE_SOURCE_DIR}/src/irods_catalog_properties.cpp
     ${CMAKE_SOURCE_DIR}/src/irods_sql_logger.cpp
-    ${CMAKE_SOURCE_DIR}/src/low_level_odbc.cpp
+    ${CMAKE_SOURCE_DIR}/src/low_level_libpq.cpp
     ${CMAKE_SOURCE_DIR}/src/mid_level_routines.cpp
     )
 

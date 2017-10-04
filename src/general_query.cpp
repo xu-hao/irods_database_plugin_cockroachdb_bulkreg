@@ -2254,8 +2254,7 @@ int chl_gen_query_access_control_setup_impl(
         }
 #endif
 
-        status = cmlGetFirstRowFromSql( combinedSQL, &statementNum,
-                                        genQueryInp.rowOffset, icss );
+        status = cmlGetFirstRowFromSql( combinedSQL, &statementNum, icss );
         if ( status < 0 ) {
             if ( status != CAT_NO_ROWS_FOUND ) {
                 rodsLog( LOG_NOTICE,

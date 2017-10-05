@@ -58,15 +58,7 @@
     against the R_TOKN_MAIN table for validity.
 *******************************************************/
 
-#if defined(postgres) || defined(mysql)
 #define INT64TYPE bigint
-#else
-#define INT64TYPE integer
-#endif
-
-#if defined(mysql)
-SET SESSION @IRODS_MYSQL_DEFAULT_STORAGE_ENGINE_KEYWORD@='InnoDB';
-#endif
 
 create table R_ZONE_MAIN ( zone_id INT64TYPE not null, zone_name varchar(250) not null, zone_type_name varchar(250) not null, zone_conn_string varchar(1000), r_comment varchar(1000), create_ts varchar(32), modify_ts varchar(32)) ;
 
@@ -153,6 +145,8 @@ create table R_TICKET_ALLOWED_USERS ( ticket_id INT64TYPE not null, user_name va
 create table R_TICKET_ALLOWED_GROUPS ( ticket_id INT64TYPE not null, group_name varchar(250) not null);
 
 create table R_GRID_CONFIGURATION ( namespace varchar(2700), option_name varchar(2700), option_value varchar(2700));
+
+#define VARCHAR_MAX_IDX_SIZE
 
 create table R_ObjectId ( object_id serial );
 

@@ -154,32 +154,7 @@ create table R_TICKET_ALLOWED_GROUPS ( ticket_id INT64TYPE not null, group_name 
 
 create table R_GRID_CONFIGURATION ( namespace varchar(2700), option_name varchar(2700), option_value varchar(2700));
 
-#ifdef mysql
-
-/* The max size for a MySQL InnoDB index prefix is 767 bytes,
-   but since utf8 characters each take up three bytes,
-   the max is 255 utf8 characters (255x3=765)
-   http://dev.mysql.com/doc/refman/5.0/en/create-index.html
-*/
-#define VARCHAR_MAX_IDX_SIZE (767)
-
-/* For MySQL we provide an emulation of the sequences using the
-   auto-increment field in a special table
-*/
-
-drop table if exists R_ObjectId_seq_tbl;
-create table R_ObjectId_seq_tbl ( nextval bigint not null primary key auto_increment ) engine = MyISAM;
-alter table R_ObjectId_seq_tbl AUTO_INCREMENT = 10000;
-
-#else
-
-/* For Oracle and Postgres just use regular sequence */
-create sequence R_ObjectId increment by 1 start with 10000;
-
-/* And use a blank VARCHAR_MAX_IDX_SIZE */
-#define VARCHAR_MAX_IDX_SIZE
-
-#endif
+create table R_ObjectId ( object_id serial );
 
 create unique index idx_zone_main1 on R_ZONE_MAIN (zone_id);
 create unique index idx_zone_main2 on R_ZONE_MAIN (zone_name);

@@ -98,7 +98,9 @@ result_set::~result_set() {
 int result_set::next_row() {
    if(res_ == nullptr || row_ >= PQntuples(res_) - 1) {
      row_ = 0;
-     offset_ += PQntuples(res_);
+     if (res_ != nullptr) {
+       offset_ += PQntuples(res_);
+     }
      PQclear(res_);
      return query_(offset_, maxrows_, res_);
    } else {

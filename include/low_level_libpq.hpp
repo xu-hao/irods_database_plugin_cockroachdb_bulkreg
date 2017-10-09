@@ -23,21 +23,36 @@
 
 class result_set {
 public:
-  result_set(std::function<int(int, int, PGresult *&)> _query, int _offset, int _maxrows);
-  ~result_set();
+  result_set();
+  virtual ~result_set();
+  virtual int next_row() = 0;
+  virtual bool has_row();
+  virtual int row_size();
+  virtual int size();
+  virtual void get_value(int _col, char *_buf, int _len);
+  virtual const char *get_value(int _col);
+  virtual void clear();
+protected:
+  PGresult *res_;
+  int row_;
+};
+
+class all_result_set : public result_set {
+public:
+  all_result_set(std::function<int(PGresult *&)> _query);
   int next_row();
-  bool has_row();
-  int row_size();
-  int size();
-  void get_value(int _col, char *_buf, int _len);
-  const char *get_value(int _col);
-  void clear();
+private:
+  std::function<int(PGresult *&)> query_;
+};
+
+class paging_result_set : public result_set {
+public:
+  paging_result_set(std::function<int(int, int, PGresult *&)> _query, int _offset, int _maxrows);
+  int next_row();
 private:
   std::function<int(int, int, PGresult *&)> query_;
-  PGresult *res_;
   int offset_;
   int maxrows_;
-  int row_;
 };
 
 extern int cllBindVarCount;

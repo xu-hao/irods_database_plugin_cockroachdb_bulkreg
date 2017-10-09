@@ -172,18 +172,9 @@ int cmlGetOneRowFromSqlBV( const char *sql,
       return numCVal;
     }
     
-    tmp.resize(numCVal);
-
-    auto tmp2 = boost::combine(tmp, std::vector<char * const>(cVal, cVal + numCVal), std::vector<int>(cValSize, cValSize + numCVal));
-    
-    std::for_each(tmp2.begin(), tmp2.end(), [](const auto &tmp3) {
-      const char *str;
-      int len;
-      char *buf;
-      
-      boost::tie(str, buf, len) = tmp3;
-      snprintf(buf,len,"%s",str);
-    });
+    for(int i = 0; i<numCVal;i++)  {
+      snprintf(cVal[i], cValSize[i], "%s", tmp[i]);
+    }
     
     return numCVal;
 
@@ -341,7 +332,6 @@ int cmlGetMultiRowStringValuesFromSql( const char *sql,
     tsg = 0;
     pString = returnedStrings;
     for ( ;; ) {
-        i = result_sets[stmtNum]->next_row();
         if ( i != 0 )  {
             cllFreeStatement( stmtNum );
             if ( tsg > 0 ) {
@@ -356,7 +346,7 @@ int cmlGetMultiRowStringValuesFromSql( const char *sql,
             }
             return CAT_NO_ROWS_FOUND;
         }
-        for ( j = 0; j < icss->stmtPtr[stmtNum]->numOfCols; j++ ) {
+        for ( j = 0; j < result_sets[stmtNum]->row_size(); j++ ) {
             result_sets[stmtNum]->get_value(j, pString, maxStringLen );
             tsg++;
             pString += maxStringLen;
@@ -365,6 +355,7 @@ int cmlGetMultiRowStringValuesFromSql( const char *sql,
                 return tsg;
             }
         }
+        i = result_sets[stmtNum]->next_row();
     }
     return 0;
 }

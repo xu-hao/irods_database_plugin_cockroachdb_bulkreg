@@ -710,11 +710,7 @@ int setTable( int column, int sel, int selectOption, int castOption ) {
                     /* For PostgreSQL and MySQL, 'decimal' seems to work
                        fine but for Oracle 'number' is needed to handle
                        both integer and floating point. */
-#if ORA_ICAT
-                    if ( !rstrcat( whereSQL, " as number)", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-#else
                     if ( !rstrcat( whereSQL, " as decimal)", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-#endif
                 }
             }
             if ( debug > 1 ) {
@@ -1446,17 +1442,10 @@ insertWhere( char *condition, int option ) {
         if ( !rstrcpy( tmpStr2, cp1, MAX_SQL_SIZE_GQ ) ) {
             return USER_STRLEN_TOOLONG;
         } /*use table/column name just added*/
-#if ORA_ICAT
-        if ( !rstrcat( whereSQL, "=substr(?,1,length(", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-        if ( !rstrcat( whereSQL, tmpStr2, MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-        if ( !rstrcat( whereSQL, "))", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-        if ( !rstrcat( whereSQL, " AND length(", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-#else
         if ( !rstrcat( whereSQL, "=substr(?,1,char_length(", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
         if ( !rstrcat( whereSQL, tmpStr2, MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
         if ( !rstrcat( whereSQL, "))", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
         if ( !rstrcat( whereSQL, " AND char_length(", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-#endif
         if ( !rstrcat( whereSQL, tmpStr2, MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
         if ( !rstrcat( whereSQL, ")>0", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
     }
@@ -1713,11 +1702,7 @@ generateSQL( genQueryInp_t genQueryInp, char *resultingSQL,
     int N_col_meta_resc_group_attr_name = 0;
 
     char combinedSQL[MAX_SQL_SIZE_GQ];
-#if ORA_ICAT
-    char countSQL[MAX_SQL_SIZE_GQ];
-#else
     static char offsetStr[20];
-#endif
 
     if ( firstCall ) {
         icatGeneralQuerySetup(); /* initialize */
@@ -1935,24 +1920,10 @@ generateSQL( genQueryInp_t genQueryInp, char *resultingSQL,
     }
 
     if ( genQueryInp.rowOffset > 0 ) {
-#if ORA_ICAT
-        /* For Oracle, it may be possible to do this by surrounding the
-           select with another select and using rownum or row_number(),
-           but there are a number of subtle problems/special cases to
-           deal with.  So instead, we handle this elsewhere by getting
-           and disgarding rows. */
-#elif MY_ICAT
-        /* MySQL/ODBC handles it nicely via just adding limit/offset */
-        snprintf( offsetStr, sizeof offsetStr, "%d", genQueryInp.rowOffset );
-        if ( !rstrcat( combinedSQL, " limit ", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-        if ( !rstrcat( combinedSQL, offsetStr, MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-        if ( !rstrcat( combinedSQL, ",18446744073709551615", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-#else
         /* Postgres/ODBC handles it nicely via just adding offset */
         snprintf( offsetStr, sizeof offsetStr, "%d", genQueryInp.rowOffset );
         cllBindVars[cllBindVarCount++] = offsetStr;
         if ( !rstrcat( combinedSQL, " offset ?", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-#endif
     }
 
     if ( debug ) {
@@ -1960,21 +1931,6 @@ generateSQL( genQueryInp_t genQueryInp, char *resultingSQL,
     }
     strncpy( resultingSQL, combinedSQL, MAX_SQL_SIZE_GQ );
 
-#if ORA_ICAT
-    countSQL[0] = '\0';
-    if ( !rstrcat( countSQL, "select distinct count(*) ", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-    if ( !rstrcat( countSQL, fromSQL, MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-
-    if ( strlen( whereSQL ) > 6 ) {
-        if ( !rstrcat( countSQL, " " , MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-        if ( !rstrcat( countSQL, whereSQL, MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
-    }
-
-    if ( debug ) {
-        printf( "countSQL=:%s:\n", countSQL );
-    }
-    strncpy( resultingCountSQL, countSQL, MAX_SQL_SIZE_GQ );
-#endif
     return 0;
 }
 
@@ -2232,27 +2188,6 @@ int chl_gen_query_access_control_setup_impl(
             }
         }
 
-#if ORA_ICAT
-        if ( genQueryInp.options & RETURN_TOTAL_ROW_COUNT ) {
-            int cllBindVarCountSave;
-            rodsLong_t iVal;
-            cllBindVarCountSave = cllBindVarCount;
-            status = cmlGetIntegerValueFromSqlV3( countSQL, &iVal,
-                                                  icss );
-            if ( status < 0 ) {
-                if ( status != CAT_NO_ROWS_FOUND ) {
-                    rodsLog( LOG_NOTICE,
-                             "chlGenQuery cmlGetIntegerValueFromSqlV3 failure %d",
-                             status );
-                }
-                return status;
-            }
-            if ( iVal >= 0 ) {
-                result->totalRowCount = iVal;
-            }
-            cllBindVarCount = cllBindVarCountSave;
-        }
-#endif
 
         status = cmlGetFirstRowFromSql( combinedSQL, &statementNum, icss );
         if ( status < 0 ) {
@@ -2261,8 +2196,6 @@ int chl_gen_query_access_control_setup_impl(
                          "chlGenQuery cmlGetFirstRowFromSql failure %d",
                          status );
             }
-#if ORA_ICAT
-#else
             else {
                 int saveStatus;
                 if ( genQueryInp.options & RETURN_TOTAL_ROW_COUNT  &&
@@ -2275,13 +2208,9 @@ int chl_gen_query_access_control_setup_impl(
                     return saveStatus;
                 }
             }
-#endif
             return status;
         }
 
-#if ORA_ICAT
-        recursiveCall = 0; /* avoid warning */
-#else
         if ( genQueryInp.options & RETURN_TOTAL_ROW_COUNT ) {
             i = result_sets[statementNum]->size();
             if ( i >= 0 ) {
@@ -2292,7 +2221,6 @@ int chl_gen_query_access_control_setup_impl(
                 return status;
             }
         }
-#endif
 
         if ( genQueryInp.condInput.len > 0 ) {
             status = checkCondInputAccess( genQueryInp, statementNum, icss, 0 );

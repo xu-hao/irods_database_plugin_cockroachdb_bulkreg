@@ -88,14 +88,20 @@ logBindVariables( int level, const std::vector<std::string> &bindVars ) {
     }
 }
 
-result_set::result_set(std::function<int(int, int, PGresult *&)> _query, int _offset, int _maxrows) : query_(_query), offset_(_offset), maxrows_(_maxrows), res_(nullptr), row_(0) {
+result_set::result_set() : res_(nullptr), row_(0) {
+}
+
+paging_result_set::paging_result_set(std::function<int(int, int, PGresult *&)> _query, int _offset, int _maxrows) : query_(_query), offset_(_offset), maxrows_(_maxrows) {
+}
+
+all_result_set::all_result_set(std::function<int(PGresult *&)> _query) : query_(_query) {
 }
 
 result_set::~result_set() {
   clear();
 }
  
-int result_set::next_row() {
+int paging_result_set::next_row() {
    if(res_ == nullptr || row_ >= PQntuples(res_) - 1) {
      row_ = 0;
      if (res_ != nullptr) {
@@ -103,6 +109,17 @@ int result_set::next_row() {
      }
      PQclear(res_);
      return query_(offset_, maxrows_, res_);
+   } else {
+     row_++;
+     return 0; 
+   }
+}
+  
+int all_result_set::next_row() {
+   if(res_ == nullptr) {
+     return query_(res_);
+   } else if (row_ >= PQntuples(res_) - 1) {
+     return CAT_SUCCESS_BUT_WITH_NO_INFO;
    } else {
      row_++;
      return 0; 
@@ -135,27 +152,7 @@ void result_set::clear() {
   }
 }
 
-int
-execSql(const icatSessionStruct *icss, result_set **_resset, const std::string &sql, const std::vector<std::string> &bindVars) {
-    return execSql(icss, _resset, [sql](int,int){return sql;}, bindVars);
-}
-
-
-int
-execSql( const icatSessionStruct *icss, const std::string &sql, const std::vector<std::string> &bindVars) {
-    result_set *resset;
-    int status = execSql(icss, &resset, sql, bindVars);
-    delete resset;
-    return status;
-}
-
-int
-execSql( const icatSessionStruct *icss, result_set **_resset, const std::function<std::string(int, int)> &_sqlgen, const std::vector<std::string> &bindVars, int offset, int maxrows) {
-
-    PGconn *conn = (PGconn *) icss->connectPtr;
-
-    auto resset = new result_set([conn, _sqlgen, bindVars](int offset, int maxrows, PGresult *&res) {
-      auto sql = _sqlgen(offset, maxrows);
+int _execSql(PGconn *conn, const std::string &sql, const std::vector<std::string> &bindVars, PGresult *&res) {
       rodsLog( LOG_DEBUG10, "%s", sql.c_str() );
       rodsLogSql( sql.c_str() );
     
@@ -188,6 +185,38 @@ execSql( const icatSessionStruct *icss, result_set **_resset, const std::functio
       }
 
       return result;
+}
+
+int
+execSql(const icatSessionStruct *icss, result_set **_resset, const std::string &sql, const std::vector<std::string> &bindVars) {
+    PGconn *conn = (PGconn *) icss->connectPtr;
+
+    auto resset = new all_result_set([conn, sql, bindVars](PGresult *&res) {
+      return _execSql(conn, sql, bindVars, res);
+    });
+        
+    *_resset = resset;
+    
+    return resset->next_row();
+}
+
+
+int
+execSql( const icatSessionStruct *icss, const std::string &sql, const std::vector<std::string> &bindVars) {
+    result_set *resset;
+    int status = execSql(icss, &resset, sql, bindVars);
+    delete resset;
+    return status;
+}
+
+int
+execSql( const icatSessionStruct *icss, result_set **_resset, const std::function<std::string(int, int)> &_sqlgen, const std::vector<std::string> &bindVars, int offset, int maxrows) {
+
+    PGconn *conn = (PGconn *) icss->connectPtr;
+
+    auto resset = new paging_result_set([conn, _sqlgen, bindVars](int offset, int maxrows, PGresult *&res) {
+      auto sql = _sqlgen(offset, maxrows);
+      return _execSql(conn, sql, bindVars, res);
     }, offset, maxrows);
         
     *_resset = resset;

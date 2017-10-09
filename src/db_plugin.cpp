@@ -1941,9 +1941,9 @@ irods::error db_open_op(
         snprintf(icss.databasePassword, DB_PASSWORD_LEN, "%s", boost::any_cast<const std::string&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(irods::CFG_DB_PASSWORD_KW)).c_str());
         snprintf(icss.database_plugin_type, DB_TYPENAME_LEN, "%s", db_type.c_str());
 
-        const std::string& host = boost::any_cast<const std::string&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("host")));
-        const int& port = boost::any_cast<const int&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("port")));
-        const std::string& dbname = boost::any_cast<const std::string&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("dbname")));
+        const std::string& host = boost::any_cast<const std::string&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("db_host")));
+        const int& port = boost::any_cast<const int&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("db_port")));
+        const std::string& dbname = boost::any_cast<const std::string&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("db_name")));
         // =-=-=-=-=-=-=-
 	// call open in mid level
 	int status = cmlOpen( &icss, host, port, dbname );

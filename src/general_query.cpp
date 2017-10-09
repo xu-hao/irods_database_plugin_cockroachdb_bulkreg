@@ -2343,7 +2343,7 @@ int chl_gen_query_access_control_setup_impl(
         if ( debug ) {
             printf( "result->rowCnt=%d\n", result->rowCnt );
         }
-        numOfCols = icss->stmtPtr[statementNum]->numOfCols;
+        numOfCols = result_sets[statementNum]->row_size();
         if ( debug ) {
             printf( "numOfCols=%d\n", numOfCols );
         }
@@ -2353,7 +2353,7 @@ int chl_gen_query_access_control_setup_impl(
         maxColSize = 0;
 
         for ( k = 0; k < numOfCols; k++ ) {
-            j = strlen( icss->stmtPtr[statementNum]->resultValue[k] );
+            j = strlen( result_sets[statementNum]->get_value(k) );
             if ( maxColSize <= j ) {
                 maxColSize = j;
             }
@@ -2431,7 +2431,7 @@ int chl_gen_query_access_control_setup_impl(
         for ( j = 0; j < numOfCols; j++ ) {
             tResult2 = result->sqlResult[j].value; // ptr to value str
             tResult2 += currentMaxColSize * ( result->rowCnt - 1 );  // skip forward for this row
-            strncpy( tResult2, icss->stmtPtr[statementNum]->resultValue[j],
+            result_sets[statementNum]->get_value( j, tResult2, 
                      currentMaxColSize ); // copy in the value text
         }
 

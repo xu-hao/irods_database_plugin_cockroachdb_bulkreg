@@ -157,6 +157,7 @@ int cmlGetOneRowFromSqlBV( const char *sql,
                            const icatSessionStruct *icss ) {
   
     std::vector<const char *> tmp;
+    tmp.resize(numOfCols);
     std::fill(tmp.begin(), tmp.end(), nullptr);
     
     result_set *resset;

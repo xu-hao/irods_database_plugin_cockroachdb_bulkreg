@@ -218,7 +218,7 @@ int cmlGetFirstRowFromSqlBV( const char *sql,
                              const std::vector<std::string> &bindVars,
                              int *statement,
                              const icatSessionStruct *icss ) {
-    int i = cllExecSqlWithResult( icss, statement, sql );
+    int i = cllExecSqlWithResultBV( icss, statement, sql, bindVars );
 
     if ( i != 0 ) {
         cllFreeStatement( *statement );

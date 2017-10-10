@@ -27,6 +27,7 @@ public:
   virtual ~result_set();
   virtual int next_row() = 0;
   virtual bool has_row();
+  virtual const char *col_name(int _col);
   virtual int row_size();
   virtual int size();
   virtual void get_value(int _col, char *_buf, int _len);

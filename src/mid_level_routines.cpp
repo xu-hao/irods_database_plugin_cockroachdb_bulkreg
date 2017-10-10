@@ -224,7 +224,9 @@ int cmlGetFirstRowFromSqlBV( const char *sql,
         cllFreeStatement( *statement );
         *statement = 0;
         if ( i <= CAT_ENV_ERR ) {
-            return ( i );   /* already an iRODS error code */
+            if(i==CAT_SUCCESS_BUT_WITH_NO_INFO) {
+	    return CAT_NO_ROWS_FOUND;
+	  } else {return ( i );   /* already an iRODS error code */}
         }
         return CAT_SQL_ERR;
     }
@@ -912,7 +914,7 @@ cmlCheckTicketRestrictions( const char *ticketId, const char *ticketHost,
 
     for ( ; status != CAT_NO_ROWS_FOUND; ) {
         if ( strncmp( ticketHost,
-                      icss->stmtPtr[stmtNum]->resultValue[0],
+                      result_sets[stmtNum]->get_value(0),
                       NAME_LEN ) == 0 ) {
             hostOK = 1;
         }
@@ -947,14 +949,14 @@ cmlCheckTicketRestrictions( const char *ticketId, const char *ticketHost,
     myUser += userZone;
     for ( ; status != CAT_NO_ROWS_FOUND; ) {
         if ( strncmp( userName,
-                      icss->stmtPtr[stmtNum]->resultValue[0],
+                      result_sets[stmtNum]->get_value(0),
                       NAME_LEN ) == 0 ) {
             userOK = 1;
         }
         else {
             /* try user#zone */
             if ( strncmp( myUser.c_str(),
-                          icss->stmtPtr[stmtNum]->resultValue[0],
+                          result_sets[stmtNum]->get_value(0),
                           NAME_LEN ) == 0 ) {
                 userOK = 1;
             }
@@ -988,7 +990,7 @@ cmlCheckTicketRestrictions( const char *ticketId, const char *ticketHost,
     for ( ; status != CAT_NO_ROWS_FOUND; ) {
         int status2;
         status2 = cmlCheckUserInGroup( userName, userZone,
-                                       icss->stmtPtr[stmtNum]->resultValue[0],
+                                       result_sets[stmtNum]->get_value(0),
                                        icss );
         if ( status2 == 0 ) {
             groupOK = 1;

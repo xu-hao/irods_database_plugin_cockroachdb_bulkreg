@@ -1994,20 +1994,20 @@ checkCondInputAccess( genQueryInp_t genQueryInp, int statementNum,
     }
 
     /* Try to find the dataId and/or collID in the output */
-    nCols = icss->stmtPtr[statementNum]->numOfCols;
+    nCols = result_sets[statementNum]->row_size();
     for ( i = 0; i < nCols; i++ ) {
-        if ( strcmp( icss->stmtPtr[statementNum]->resultColName[i], "data_id" ) == 0 ) {
+        if ( strcmp( result_sets[statementNum]->col_name(i), "data_id" ) == 0 ) {
             dataIx = i;
         }
         /* With Oracle the column names are in upper case: */
-        if ( strcmp( icss->stmtPtr[statementNum]->resultColName[i], "DATA_ID" ) == 0 ) {
+        if ( strcmp( result_sets[statementNum]->col_name(i), "DATA_ID" ) == 0 ) {
             dataIx = i;
         }
-        if ( strcmp( icss->stmtPtr[statementNum]->resultColName[i], "coll_id" ) == 0 ) {
+        if ( strcmp( result_sets[statementNum]->col_name(i), "coll_id" ) == 0 ) {
             collIx = i;
         }
         /* With Oracle the column names are in upper case: */
-        if ( strcmp( icss->stmtPtr[statementNum]->resultColName[i], "COLL_ID" ) == 0 ) {
+        if ( strcmp( result_sets[statementNum]->col_name(i), "COLL_ID" ) == 0 ) {
             collIx = i;
         }
     }
@@ -2018,7 +2018,7 @@ checkCondInputAccess( genQueryInp_t genQueryInp, int statementNum,
     if ( dataIx >= 0 ) {
         if ( continueFlag == 1 ) {
             if ( strcmp( prevDataId,
-                         icss->stmtPtr[statementNum]->resultValue[dataIx] ) == 0 ) {
+                         result_sets[statementNum]->get_value(dataIx) ) == 0 ) {
                 if ( strcmp( prevUser, genQueryInp.condInput.value[userIx] ) == 0 ) {
                     if ( strcmp( prevAccess,
                                  genQueryInp.condInput.value[accessIx] ) == 0 ) {
@@ -2028,7 +2028,7 @@ checkCondInputAccess( genQueryInp_t genQueryInp, int statementNum,
             }
         }
 
-        snprintf( prevDataId, sizeof( prevDataId ), "%s", icss->stmtPtr[statementNum]->resultValue[dataIx] );
+        snprintf( prevDataId, sizeof( prevDataId ), "%s", result_sets[statementNum]->get_value(dataIx) );
         snprintf( prevUser, sizeof( prevUser ), "%s", genQueryInp.condInput.value[userIx] );
         snprintf( prevAccess, sizeof( prevAccess ), "%s", genQueryInp.condInput.value[accessIx] );
         prevStatus = 0;
@@ -2041,7 +2041,7 @@ checkCondInputAccess( genQueryInp_t genQueryInp, int statementNum,
             zoneName = genQueryInp.condInput.value[zoneIx];
         }
         status = cmlCheckDataObjId(
-                     icss->stmtPtr[statementNum]->resultValue[dataIx],
+                     result_sets[statementNum]->get_value(dataIx),
                      genQueryInp.condInput.value[userIx],
                      ( char* )zoneName.c_str(),
                      genQueryInp.condInput.value[accessIx],
@@ -2060,7 +2060,7 @@ checkCondInputAccess( genQueryInp_t genQueryInp, int statementNum,
             zoneName = genQueryInp.condInput.value[zoneIx];
         }
         status = cmlCheckDirId(
-                     icss->stmtPtr[statementNum]->resultValue[collIx],
+                     result_sets[statementNum]->get_value(collIx),
                      genQueryInp.condInput.value[userIx],
                      ( char* )zoneName.c_str(),
                      genQueryInp.condInput.value[accessIx], icss );

@@ -145,6 +145,11 @@ void result_set::get_value(int _col, char *_buf, int _len) {
 const char *result_set::get_value(int _col) {
   return PQgetvalue(res_, row_, _col);
 }
+
+const char *result_set::col_name(int i) {
+   return PQfname(res_, i); 
+}
+  
 void result_set::clear() {
   if(res_ != nullptr) {
     PQclear(res_);

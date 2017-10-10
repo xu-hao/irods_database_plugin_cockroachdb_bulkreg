@@ -254,7 +254,11 @@ int cmlGetNextRowFromStatement( int stmtNum,
     if ( i != 0 ) {
         cllFreeStatement( stmtNum );
         if ( i <= CAT_ENV_ERR ) {
+	  if(i==CAT_SUCCESS_BUT_WITH_NO_INFO) {
+	    return CAT_NO_ROWS_FOUND;
+	  } else {
             return ( i );   /* already an iRODS error code */
+	  }
         }
         return CAT_SQL_ERR;
     }
@@ -460,25 +464,31 @@ rodsLong_t
 cmlGetNextSeqVal( const icatSessionStruct *icss ) {
     int status;
     rodsLong_t iVal;
-    status = cmlGetIntegerValueFromSql("insert into R_ObjectID default values returning object_id", &iVal, std::vector<std::string>(), icss );
-    if ( status < 0 ) {
+    result_set *resset;
+    status = execSql(icss, &resset, "insert into R_ObjectID default values returning object_id" );
+    if ( status < 0) {
         rodsLog( LOG_NOTICE,
                  "cmlGetNextSeqVal cmlGetIntegerValueFromSql failure %d", status );
         return status;
     }
+    iVal = atoll(resset->get_value(0));
+    delete resset;
     return iVal;
 }
 
 int
 cmlGetNextSeqStr( char *seqStr, int maxSeqStrLen, const icatSessionStruct *icss ) {
     int status;
-    rodsLong_t iVal;
-    status = cmlGetStringValueFromSql("insert into R_ObjectID default values returning object_id", seqStr, maxSeqStrLen, std::vector<std::string>(), icss );
-    if ( status < 0 ) {
+    result_set *resset;
+    status = execSql(icss, &resset, "insert into R_ObjectID default values returning object_id" );
+    if ( status < 0) {
         rodsLog( LOG_NOTICE,
                  "cmlGetNextSeqVal cmlGetIntegerValueFromSql failure %d", status );
+        return status;
     }
-    return status;
+    resset->get_value(0, seqStr, maxSeqStrLen);
+    delete resset;
+    return 0;
 }
 
 /*

@@ -152,9 +152,24 @@ void result_set::clear() {
   }
 }
 
-int _execSql(PGconn *conn, const std::string &sql, const std::vector<std::string> &bindVars, PGresult *&res) {
-      rodsLog( LOG_DEBUG10, "%s", sql.c_str() );
-      rodsLogSql( sql.c_str() );
+std::string replaceParams(const std::string &_sql) {
+  std::stringstream ss;
+  int i = 1;
+  for(const char &ch : _sql) {
+    if (ch == '?') {
+      ss << "$" << std::to_string(i++);
+    } else {
+      ss << ch;
+    }
+  }
+  return ss.str();
+}
+
+int _execSql(PGconn *conn, const std::string &_sql, const std::vector<std::string> &bindVars, PGresult *&res) {
+      rodsLog( LOG_DEBUG10, "%s", _sql.c_str() );
+      rodsLogSql( _sql.c_str() );
+      
+      std::string sql = replaceParams(_sql);
     
       std::vector<const char *> bs;
       std::transform(bindVars.begin(), bindVars.end(), std::back_inserter(bs), [](const std::string &str){return str.c_str();});

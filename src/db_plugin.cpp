@@ -1577,10 +1577,10 @@ int setOverQuota( rsComm_t *rsComm ) {
         if ( status != 0 ) {
             break;
         }
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[0];
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(0);
         cllBindVars[cllBindVarCount++] = myTime;
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[1];
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[0];
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(1);
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(0);
         if ( logSQL != 0 ) {
             rodsLog( LOG_SQL, "setOverQuota SQL 4" );
         }
@@ -1610,11 +1610,11 @@ int setOverQuota( rsComm_t *rsComm ) {
         if ( status != 0 ) {
             break;
         }
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[0];
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(0);
         cllBindVars[cllBindVarCount++] = myTime;
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[1];
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[0];
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[2];
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(1);
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(0);
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(2);
         if ( logSQL != 0 ) {
             rodsLog( LOG_SQL, "setOverQuota SQL 6" );
         }
@@ -1666,12 +1666,12 @@ int setOverQuota( rsComm_t *rsComm ) {
         if ( status != 0 ) {
             break;
         }
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[0];
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[1];
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(0);
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(1);
         cllBindVars[cllBindVarCount++] = myTime;
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[2];
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[0];
-        cllBindVars[cllBindVarCount++] = icss.stmtPtr[statementNum]->resultValue[1];
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(2);
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(0);
+        cllBindVars[cllBindVarCount++] = result_sets[statementNum]->get_value(1);
         if ( logSQL != 0 ) {
             rodsLog( LOG_SQL, "setOverQuota SQL 8" );
         }
@@ -5978,10 +5978,10 @@ irods::error db_simple_query_op_vector(
             didGet = 1;
         }
         needToGet = 1;
-        nCols = icss.stmtPtr[stmtNum]->numOfCols;
+        nCols = result_sets[stmtNum]->row_size();
         if ( rows == 0 && _format == 3 ) {
             for ( i = 0; i < nCols ; i++ ) {
-                rstrcat( _out_buf, icss.stmtPtr[stmtNum]->resultColName[i], _max_out_buf );
+                rstrcat( _out_buf, result_sets[stmtNum]->col_name(i), _max_out_buf );
                 if ( i != nCols - 1 ) {
                     rstrcat( _out_buf, " ", _max_out_buf );
                 }
@@ -5990,11 +5990,11 @@ irods::error db_simple_query_op_vector(
         rows++;
         for ( i = 0; i < nCols ; i++ ) {
             if ( _format == 1 || _format == 3 ) {
-                if ( strlen( icss.stmtPtr[stmtNum]->resultValue[i] ) == 0 ) {
+                if ( strlen( result_sets[stmtNum]->get_value(i) ) == 0 ) {
                     rstrcat( _out_buf, "- ", _max_out_buf );
                 }
                 else {
-                    rstrcat( _out_buf, icss.stmtPtr[stmtNum]->resultValue[i],
+                    rstrcat( _out_buf, result_sets[stmtNum]->get_value(i),
                              _max_out_buf );
                     if ( i != nCols - 1 ) {
                         /* add a space except for the last column */
@@ -6003,9 +6003,9 @@ irods::error db_simple_query_op_vector(
                 }
             }
             if ( _format == 2 ) {
-                rstrcat( _out_buf, icss.stmtPtr[stmtNum]->resultColName[i], _max_out_buf );
+                rstrcat( _out_buf, result_sets[stmtNum]->col_name(i), _max_out_buf );
                 rstrcat( _out_buf, ": ", _max_out_buf );
-                rstrcat( _out_buf, icss.stmtPtr[stmtNum]->resultValue[i], _max_out_buf );
+                rstrcat( _out_buf, result_sets[stmtNum]->get_value(i), _max_out_buf );
                 rstrcat( _out_buf, "\n", _max_out_buf );
             }
         }
@@ -12296,11 +12296,11 @@ irods::error db_check_quota_op(
     /* For now, log it */
     rodsLog( LOG_NOTICE, "checkQuota: inUser:%s inResc:%s RescId:%s Quota:%s",
              _user_name, _resc_name,
-             icss.stmtPtr[statementNum]->resultValue[1],  /* resc_id column */
-             icss.stmtPtr[statementNum]->resultValue[3] ); /* quota_over column */
+             result_sets[statementNum]->get_value(1),  /* resc_id column */
+             result_sets[statementNum]->get_value(3) ); /* quota_over column */
 
-    *_user_quota = atoll( icss.stmtPtr[statementNum]->resultValue[3] );
-    if ( atoi( icss.stmtPtr[statementNum]->resultValue[1] ) == 0 ) {
+    *_user_quota = atoll( result_sets[statementNum]->get_value(3) );
+    if ( atoi( result_sets[statementNum]->get_value(1) ) == 0 ) {
         *_quota_status = QUOTA_GLOBAL;
     }
     else {
@@ -13403,14 +13403,14 @@ irods::error db_specific_query_op(
         needToGetNextRow = 1;
 
         _result->rowCnt++;
-        numOfCols = icss.stmtPtr[statementNum]->numOfCols;
+        numOfCols = result_sets[statementNum]->row_size();
         _result->attriCnt = numOfCols;
         _result->continueInx = statementNum + 1;
 
         maxColSize = 0;
 
         for ( k = 0; k < numOfCols; k++ ) {
-            j = strlen( icss.stmtPtr[statementNum]->resultValue[k] );
+            j = strlen( result_sets[statementNum]->get_value(k) );
             if ( maxColSize <= j ) {
                 maxColSize = j;
             }
@@ -13476,7 +13476,7 @@ irods::error db_specific_query_op(
             tResult2 = _result->sqlResult[j].value; /* ptr to value str */
             tResult2 += currentMaxColSize * ( _result->rowCnt - 1 );  /* skip forward
                                                                   for this row */
-            strncpy( tResult2, icss.stmtPtr[statementNum]->resultValue[j],
+            strncpy( tResult2, result_sets[statementNum]->get_value(j),
                      currentMaxColSize ); /* copy in the value text */
         }
 
@@ -13620,7 +13620,7 @@ irods::error db_get_distinct_data_obj_count_on_resource_op(
         return ERROR( status, "cmlGetFirstRowFromSql failed" );
     }
 
-    ( *_count ) = atol( icss.stmtPtr[ statement_num ]->resultValue[0] );
+    ( *_count ) = atol( result_sets[ statement_num ]->get_value(0) );
 
     return SUCCESS();
 
@@ -13712,7 +13712,7 @@ irods::error db_get_distinct_data_objs_missing_from_child_given_parent_op(
             return ERROR( status, "failed to get a row" );
         }
 
-        _results->push_back( atoi( icss.stmtPtr[ statement_num ]->resultValue[0] ) );
+        _results->push_back( atoi( result_sets[ statement_num ]->get_value(0) ) );
 
     } // for i
 
@@ -13785,7 +13785,7 @@ irods::error db_get_repl_list_for_leaf_bundles_op(
         cmlFreeStatement(statement_num, &icss);
         return ERROR(status_cmlGetFirstRowFromSql, boost::format("failed to get first row from query [%s]") % query);
     }
-    _results->push_back(atoll(icss.stmtPtr[statement_num]->resultValue[0]));
+    _results->push_back(atoll(result_sets[statement_num]->get_value(0)));
 
     for (rodsLong_t i=1; i<_count; ++i) {
         const int status_cmlGetNextRowFromStatement = cmlGetNextRowFromStatement(statement_num, &icss);
@@ -13796,7 +13796,7 @@ irods::error db_get_repl_list_for_leaf_bundles_op(
             cmlFreeStatement(statement_num, &icss);
             return ERROR(status_cmlGetNextRowFromStatement, boost::format("failed to get row [%d] from query [%s]") % i % query);
         }
-        _results->push_back(atoll(icss.stmtPtr[statement_num]->resultValue[0]));
+        _results->push_back(atoll(result_sets[statement_num]->get_value(0)));
     }
     cmlFreeStatement(statement_num, &icss);
     return SUCCESS();

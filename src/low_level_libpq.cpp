@@ -44,6 +44,8 @@
 int cllBindVarCount = 0;
 const char *cllBindVars[MAX_BIND_VARS];
 int cllBindVarCountPrev = 0; /* cllBindVarCount earlier in processing */
+std::vector<result_set *> result_sets;
+static int didBegin = 0;
 
 
 #define TMP_STR_LEN 1040
@@ -171,6 +173,23 @@ std::string replaceParams(const std::string &_sql) {
 }
 
 int _execSql(PGconn *conn, const std::string &_sql, const std::vector<std::string> &bindVars, PGresult *&res) {
+      if(_sql == "begin") {
+          didBegin = 1;
+      } else if ( didBegin == 0 ) {
+          PGresult *res;
+          int status = _execSql( conn, "begin", std::vector<std::string>(), res);
+	  PQclear(res);
+          if ( status != 0 ) {
+              return status;
+          }
+      }
+      
+      if ( _sql == "commit" ||
+            _sql == "rollback" ) {
+          didBegin = 0;
+      }
+      
+
       rodsLog( LOG_DEBUG10, "%s", _sql.c_str() );
       rodsLogSql( _sql.c_str() );
       
@@ -254,9 +273,6 @@ int cllFreeStatement(int _resinx) {
 
 
 
-std::vector<result_set *> result_sets;
-
-static int didBegin = 0;
 
 
 /*
@@ -330,22 +346,6 @@ int
 cllExecSqlNoResult( const icatSessionStruct *icss, const char *sql ) {
 
 
-    if ( strncmp( sql, "commit", 6 ) == 0 ||
-            strncmp( sql, "rollback", 8 ) == 0 ) {
-        didBegin = 0;
-    }
-    else {
-        if ( didBegin == 0 ) {
-
-            result_set *resset;
-            int status = execSql( icss, &resset, "begin");
-	    delete resset;
-            if ( status != 0 ) {
-                return status;
-            }
-        }
-        didBegin = 1;
-    }
     std::vector<std::string> bindVars;
     if ( cllGetBindVars( bindVars ) != 0 ) {
 	return -1;

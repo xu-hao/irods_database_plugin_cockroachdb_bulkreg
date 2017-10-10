@@ -192,7 +192,7 @@ int _execSql(PGconn *conn, const std::string &_sql, const std::vector<std::strin
       }
       else {
 	  logBindVariables( LOG_NOTICE, bindVars );
-	  rodsLog( LOG_NOTICE, "_cllExecSqlNoResult: SQLExecDirect error: %d sql:%s",
+	  rodsLog( LOG_NOTICE, "_execSql: PQexecParams error: %s sql:%s",
 		  PQresStatus(stat), sql.c_str() );
 	  result = logPsgError( LOG_NOTICE, res );
 	  PQclear(res);

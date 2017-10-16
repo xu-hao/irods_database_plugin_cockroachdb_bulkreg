@@ -132,6 +132,9 @@ int cmlGetOneRowFromSqlV2( const char *sql,
                                          bindVars );
     if ( status != 0 ) {
         if ( status <= CAT_ENV_ERR ) {
+	    if(status == CAT_SUCCESS_BUT_WITH_NO_INFO) {
+		return CAT_NO_ROWS_FOUND;
+	    }
             return status;    /* already an iRODS error code */
         }
         return CAT_SQL_ERR;

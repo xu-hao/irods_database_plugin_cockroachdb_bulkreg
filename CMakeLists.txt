@@ -28,9 +28,6 @@ if (NOT IRODS_PYTHON_VERSION)
   message(STATUS "Setting unspecified IRODS_PYTHON_VERSION to '${IRODS_PYTHON_VERSION}'. This is the correct setting for normal builds.")
 endif()
 
-find_package(PythonInterp ${IRODS_PYTHON_VERSION} REQUIRED)
-find_package(PythonLibs ${IRODS_PYTHON_VERSION} REQUIRED)
-
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
 set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -stdlib=libc++")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -stdlib=libc++")

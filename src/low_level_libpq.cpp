@@ -31,7 +31,6 @@
 #include "low_level_libpq.hpp"
 
 #include "irods_log.hpp"
-#include "irods_error.hpp"
 #include "irods_stacktrace.hpp"
 #include "irods_server_properties.hpp"
 
@@ -172,24 +171,106 @@ std::string replaceParams(const std::string &_sql) {
   return ss.str();
 }
 
-int _execSql(PGconn *conn, const std::string &_sql, const std::vector<std::string> &bindVars, PGresult *&res) {
-      if(_sql == "begin") {
-          didBegin = 1;
-      } else if ( didBegin == 0 ) {
-          PGresult *res;
-          int status = _execSql( conn, "begin", std::vector<std::string>(), res);
+std::tuple<int, std::string> processRes(const std::string &_sql, const std::vector<std::string> &bindVars, PGresult *res) {
+      ExecStatusType stat = PQresultStatus(res);
+      rodsLogSqlResult( PQresStatus(stat) );
+      int result = 0;
+      if ( stat == PGRES_COMMAND_OK ||
+	      stat == PGRES_TUPLES_OK ) {
+	  if ( ! boost::iequals( _sql, "begin" )  &&
+		  ! boost::iequals( _sql, "commit" ) &&
+		  ! boost::iequals( _sql, "rollback" ) ) {
+	      if ( atoi(PQcmdTuples(res)) == 0 ) {
+		  result = CAT_SUCCESS_BUT_WITH_NO_INFO;
+	      }
+	  }
+      }
+      else {
+	  logBindVariables( LOG_NOTICE, bindVars );
+	  rodsLog( LOG_NOTICE, "_execSql: PQexecParams error: %s sql:%s",
+		  PQresStatus(stat), _sql.c_str() );
+	  result = logPsgError( LOG_NOTICE, res );
 	  PQclear(res);
-          if ( status != 0 ) {
-              return status;
-          }
+	  res = NULL;
       }
-      
-      if ( _sql == "commit" ||
-            _sql == "rollback" ) {
-          didBegin = 0;
-      }
-      
 
+      return std::make_tuple(result, std::string(PQresultErrorField(res, PG_DIAG_SQLSTATE)));
+}
+
+std::tuple<int, std::string> _execTxSql(PGconn *conn, const std::string &_sql) {
+  PGresult *res;
+  res = PQexec(conn, _sql.c_str());
+  return processRes(_sql, std::vector<std::string>(), res);  
+}
+
+irods::error execTx(const icatSessionStruct *icss, const std::function<irods::error()> &func) {
+  
+  PGconn *conn = (PGconn *) icss->connectPtr;
+  
+  int result = std::get<0>(_execTxSql(conn, "begin"));
+  if(result < 0) {
+        rodsLog( LOG_NOTICE,
+                     "begin failure %d",
+                     result );
+        return ERROR( result, "begin failure" );
+    return CODE(result);
+  }
+  result = std::get<0>(_execTxSql(conn, "savepoint cockroach_restart"));
+  if(result < 0) {
+        rodsLog( LOG_NOTICE,
+                     "savepoint cockroach_restart failure %d",
+                     result );
+        return ERROR( result, "savepoint cockroach_restart failure" );
+    return CODE(result);
+  }
+  while(true) {
+    irods::error result4 = func();
+    if(!result4.ok()) {
+    /*  int result3 = std::get<0>(_execTxSql("rollback"));
+      if(result3 < 0) {
+	return CODE(result3);
+      }*/
+      return result4;
+    }
+    std::tuple<int, std::string> result2 = _execTxSql(conn, "release savepoint cockroach_restart");
+    result = std::get<0>(result2);
+    if(result < 0) {
+        rodsLog( LOG_NOTICE,
+                     "release savepoint cockroach_restart failure %d",
+                     result );
+      if(std::get<1>(result2) == "40001") {
+	result = std::get<0>(_execTxSql(conn, "rollback to savepoint cockroach_restart"));
+	if(!(result < 0)) {
+	  continue;
+	} else {
+	  rodsLog( LOG_NOTICE,
+                     "rollback to savepoint cockroach_restart failure %d",
+                     result );
+	}
+      }
+      result = std::get<0>(_execTxSql(conn, "rollback"));
+      if(result < 0) {
+        rodsLog( LOG_NOTICE,
+                     "rollback failure %d",
+                     result );
+        return ERROR( result, "rollback failure" );
+      }
+      return CODE(std::get<0>(result2));
+
+    } else {
+      result = std::get<0>(_execTxSql(conn, "commit"));
+      if(result < 0) {
+        rodsLog( LOG_NOTICE,
+                     "commit failure %d",
+                     result );
+        return ERROR( result, "commit failure" );
+      }
+      return SUCCESS();
+    }      
+  }
+}
+
+int _execSql(PGconn *conn, const std::string &_sql, const std::vector<std::string> &bindVars, PGresult *&res) {
       rodsLog( LOG_DEBUG10, "%s", _sql.c_str() );
       rodsLogSql( _sql.c_str() );
       
@@ -200,31 +281,9 @@ int _execSql(PGconn *conn, const std::string &_sql, const std::vector<std::strin
       
       res = PQexecParams( conn, sql.c_str(), bs.size(), NULL, bs.data(), NULL, NULL, 0 );
 
-      ExecStatusType stat = PQresultStatus(res);
-      rodsLogSqlResult( PQresStatus(stat) );
-
-      int result = 0;
-      if ( stat == PGRES_COMMAND_OK ||
-	      stat == PGRES_TUPLES_OK ) {
-	  if ( ! boost::iequals( sql, "begin" )  &&
-		  ! boost::iequals( sql, "commit" ) &&
-		  ! boost::iequals( sql, "rollback" ) ) {
-	      if ( atoi(PQcmdTuples(res)) == 0 ) {
-		  result = CAT_SUCCESS_BUT_WITH_NO_INFO;
-	      }
-	  }
-      }
-      else {
-	  logBindVariables( LOG_NOTICE, bindVars );
-	  rodsLog( LOG_NOTICE, "_execSql: PQexecParams error: %s sql:%s",
-		  PQresStatus(stat), sql.c_str() );
-	  result = logPsgError( LOG_NOTICE, res );
-	  PQclear(res);
-	  res = NULL;
-      }
-
-      return result;
+      return std::get<0>(processRes(sql, bindVars, res));
 }
+
 
 int
 execSql(const icatSessionStruct *icss, result_set **_resset, const std::string &sql, const std::vector<std::string> &bindVars) {

@@ -13,6 +13,7 @@
 
 #include "rods.h"
 #include "icatStructs.hpp"
+#include "irods_error.hpp"
 
 #include <vector>
 #include <string>
@@ -56,10 +57,13 @@ private:
   int maxrows_;
 };
 
+
+
 extern int cllBindVarCount;
 extern const char *cllBindVars[MAX_BIND_VARS];
 extern std::vector<result_set *> result_sets;
 
+irods::error execTx(const icatSessionStruct *icss, const std::function<irods::error()> &func);
 int execSql(const icatSessionStruct *icss, result_set **_resset, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>());
 int execSql( const icatSessionStruct *icss, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>());
 int execSql( const icatSessionStruct *icss, result_set **_resset, const std::function<std::string(int, int)> &_sqlgen, const std::vector<std::string> &bindVars = std::vector<std::string>(), int offset = 0, int maxrows = 256);

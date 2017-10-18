@@ -195,10 +195,11 @@ std::tuple<int, std::string> processRes(const std::string &_sql, const std::vect
     	  rodsLog( LOG_NOTICE, "_execSql: PQexecParams error: %s sql:%s",
     		  PQresStatus(stat), _sql.c_str() );
     	  result = logPsgError( LOG_NOTICE, res );
+        std::string stat = std::string(PQresultErrorField(res, PG_DIAG_SQLSTATE));
     	  PQclear(res);
     	  res = NULL;
 
-        return std::make_tuple(result, std::string(PQresultErrorField(res, PG_DIAG_SQLSTATE)));
+        return std::make_tuple(result, stat);
       }
 
 }

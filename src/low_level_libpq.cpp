@@ -70,10 +70,10 @@ logPsgError( int level, PGresult *res ) {
                     strstr( ( char * )psgErrorMsg, "duplicate key" ) ) {
                 errorVal = CATALOG_ALREADY_HAS_ITEM_BY_THAT_NAME;
             }
-    
+
         rodsLog( level, "SQLSTATE: %s", sqlstate );
         rodsLog( level, "SQL Error message: %s", psgErrorMsg );
-    
+
     return errorVal;
 }
 
@@ -101,7 +101,7 @@ all_result_set::all_result_set(std::function<int(PGresult *&)> _query) : query_(
 result_set::~result_set() {
   clear();
 }
- 
+
 int paging_result_set::next_row() {
    if(res_ == nullptr || row_ >= PQntuples(res_) - 1) {
      row_ = 0;
@@ -112,10 +112,10 @@ int paging_result_set::next_row() {
      return query_(offset_, maxrows_, res_);
    } else {
      row_++;
-     return 0; 
+     return 0;
    }
 }
-  
+
 int all_result_set::next_row() {
    if(res_ == nullptr) {
      return query_(res_);
@@ -123,22 +123,22 @@ int all_result_set::next_row() {
      return CAT_SUCCESS_BUT_WITH_NO_INFO;
    } else {
      row_++;
-     return 0; 
+     return 0;
    }
 }
-  
+
 bool result_set::has_row() {
-   return res_ != nullptr && PQntuples(res_) > 0; 
+   return res_ != nullptr && PQntuples(res_) > 0;
 }
-  
+
 int result_set::row_size() {
-   return PQnfields(res_); 
+   return PQnfields(res_);
 }
-  
+
 int result_set::size() {
-   return PQntuples(res_); 
+   return PQntuples(res_);
 }
-  
+
 void result_set::get_value(int _col, char *_buf, int _len) {
   snprintf(_buf, _len, "%s", get_value(_col));
 }
@@ -148,9 +148,9 @@ const char *result_set::get_value(int _col) {
 }
 
 const char *result_set::col_name(int i) {
-   return PQfname(res_, i); 
+   return PQfname(res_, i);
 }
-  
+
 void result_set::clear() {
   if(res_ != nullptr) {
     PQclear(res_);
@@ -200,13 +200,13 @@ std::tuple<int, std::string> processRes(const std::string &_sql, const std::vect
 std::tuple<int, std::string> _execTxSql(PGconn *conn, const std::string &_sql) {
   PGresult *res;
   res = PQexec(conn, _sql.c_str());
-  return processRes(_sql, std::vector<std::string>(), res);  
+  return processRes(_sql, std::vector<std::string>(), res);
 }
 
-irods::error execTx(const icatSessionStruct *icss, const std::function<irods::error()> &func) {
-  
+irods::error execTx(const icatSessionStruct *icss, const boost::variant<std::function<irods::error()>, std::function<boost::variant<irods::error, std::tuple<bool, irods::error>>()>> &func) {
+
   PGconn *conn = (PGconn *) icss->connectPtr;
-  
+
   int result = std::get<0>(_execTxSql(conn, "begin"));
   if(result < 0) {
         rodsLog( LOG_NOTICE,
@@ -223,14 +223,44 @@ irods::error execTx(const icatSessionStruct *icss, const std::function<irods::er
         return ERROR( result, "savepoint cockroach_restart failure" );
     return CODE(result);
   }
+  class _execTxSql_visitor : public boost::static_visitor<std::tuple<bool, irods::error>>
+  {
+  public:
+    std::tuple<bool, irods::error> operator()(const std::function<irods::error()> &func) const
+    {
+        irods::error result4 = func();
+        return std::make_tuple(result4.ok(), result4);
+    }
+
+    std::tuple<bool, irods::error> operator()(const std::function<boost::variant<irods::error, std::tuple<bool, irods::error>>()> & func) const
+    {
+        class _execTxSql_result_visitor : public boost::static_visitor<std::tuple<bool, irods::error>>
+        {
+        public:
+          std::tuple<bool, irods::error> operator()(const irods::error &result) const
+          {
+              return std::make_tuple(result.ok(), result);
+          }
+
+          std::tuple<bool, irods::error> operator()(const std::tuple<bool, irods::error> & result) const
+          {
+              return result;
+          }
+        };
+        auto result = func();
+        return boost::apply_visitor(_execTxSql_result_visitor(), result);
+    }
+  };
   while(true) {
-    irods::error result4 = func();
-    if(!result4.ok()) {
+
+    std::tuple<bool, irods::error> result4 = boost::apply_visitor(_execTxSql_visitor(), func);
+    irods::error result3 = std::get<1>(result4);
+    if(!std::get<0>(result4)) {
     /*  int result3 = std::get<0>(_execTxSql("rollback"));
       if(result3 < 0) {
 	return CODE(result3);
       }*/
-      return result4;
+      return result3;
     }
     std::tuple<int, std::string> result2 = _execTxSql(conn, "release savepoint cockroach_restart");
     result = std::get<0>(result2);
@@ -265,20 +295,20 @@ irods::error execTx(const icatSessionStruct *icss, const std::function<irods::er
                      result );
         return ERROR( result, "commit failure" );
       }
-      return SUCCESS();
-    }      
+      return result3;
+    }
   }
 }
 
 int _execSql(PGconn *conn, const std::string &_sql, const std::vector<std::string> &bindVars, PGresult *&res) {
       rodsLog( LOG_DEBUG10, "%s", _sql.c_str() );
       rodsLogSql( _sql.c_str() );
-      
+
       std::string sql = replaceParams(_sql);
-    
+
       std::vector<const char *> bs;
       std::transform(bindVars.begin(), bindVars.end(), std::back_inserter(bs), [](const std::string &str){return str.c_str();});
-      
+
       res = PQexecParams( conn, sql.c_str(), bs.size(), NULL, bs.data(), NULL, NULL, 0 );
 
       return std::get<0>(processRes(sql, bindVars, res));
@@ -292,9 +322,9 @@ execSql(const icatSessionStruct *icss, result_set **_resset, const std::string &
     auto resset = new all_result_set([conn, sql, bindVars](PGresult *&res) {
       return _execSql(conn, sql, bindVars, res);
     });
-        
+
     *_resset = resset;
-    
+
     return resset->next_row();
 }
 
@@ -316,9 +346,9 @@ execSql( const icatSessionStruct *icss, result_set **_resset, const std::functio
       auto sql = _sqlgen(offset, maxrows);
       return _execSql(conn, sql, bindVars, res);
     }, offset, maxrows);
-        
+
     *_resset = resset;
-    
+
     return resset->next_row();
 }
 
@@ -371,9 +401,9 @@ int
 cllDisconnect( icatSessionStruct *icss ) {
 
     PGconn *conn = (PGconn *) icss->connectPtr;
-    
+
     PQfinish(conn);
-    
+
     return 0;
 }
 
@@ -430,14 +460,14 @@ int find_res_inx() {
 int
 cllExecSqlWithResultBV(
     const icatSessionStruct *icss,
-    int *_resinx, 
+    int *_resinx,
     const char *sql,
     const std::vector< std::string > &bindVars ) {
-  
+
 
     *_resinx = find_res_inx();
-    
-    return execSql(icss, &result_sets[*_resinx], sql, bindVars);    
+
+    return execSql(icss, &result_sets[*_resinx], sql, bindVars);
 }
 
 /*
@@ -451,9 +481,6 @@ cllExecSqlWithResult( const icatSessionStruct *icss, int *_resinx, const char *s
     if ( cllGetBindVars( bindVars ) != 0 ) {
         return -1;
     }
-    
+
     return cllExecSqlWithResultBV(icss, _resinx, sql, bindVars);
 }
-
-
-

@@ -19,6 +19,7 @@
 #include <string>
 #include <functional>
 #include <libpq-fe.h>
+#include <boost/variant.hpp>
 
 #define MAX_BIND_VARS 32000
 
@@ -57,13 +58,11 @@ private:
   int maxrows_;
 };
 
-
-
 extern int cllBindVarCount;
 extern const char *cllBindVars[MAX_BIND_VARS];
 extern std::vector<result_set *> result_sets;
 
-irods::error execTx(const icatSessionStruct *icss, const std::function<irods::error()> &func);
+irods::error execTx(const icatSessionStruct *icss, const boost::variant<std::function<irods::error()>, std::function<boost::variant<irods::error, std::tuple<bool, irods::error>>()>> &func);
 int execSql(const icatSessionStruct *icss, result_set **_resset, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>());
 int execSql( const icatSessionStruct *icss, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>());
 int execSql( const icatSessionStruct *icss, result_set **_resset, const std::function<std::string(int, int)> &_sqlgen, const std::vector<std::string> &bindVars = std::vector<std::string>(), int offset = 0, int maxrows = 256);

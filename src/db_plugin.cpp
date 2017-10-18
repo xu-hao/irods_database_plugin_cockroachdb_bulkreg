@@ -2653,7 +2653,7 @@ irods::error db_reg_data_obj_op(
       if ( logSQL != 0 ) {
 	  rodsLog( LOG_SQL, "chlRegDataObj SQL 1 " );
       }
-    
+
       seqNum = cmlGetNextSeqVal( &icss );
       if ( seqNum < 0 ) {
 	  rodsLog( LOG_NOTICE, "chlRegDataObj cmlGetNextSeqVal failure %d",
@@ -3005,7 +3005,7 @@ irods::error db_reg_replica_op(
 	  _rollback( "chlRegReplica" );
 	  return ERROR( status, "cmlGetOneRowFromSqlV2 failed" );
       }
-      
+
       BOOST_SCOPE_EXIT (resset) {
 	  delete resset;
       } BOOST_SCOPE_EXIT_END
@@ -3358,7 +3358,7 @@ irods::error db_reg_rule_exec_op(
     if ( logSQL != 0 ) {
         rodsLog( LOG_SQL, "chlRegRuleExec SQL 1 " );
     }
-    
+
     std::function<irods::error()> tx = [&]() {
       seqNum = cmlGetNextSeqVal( &icss );
       if ( seqNum < 0 ) {
@@ -3476,7 +3476,7 @@ irods::error db_mod_rule_exec_op(
     if ( logSQL != 0 ) {
         rodsLog( LOG_SQL, "chlModRuleExec" );
     }
-    
+
     std::function<irods::error()> tx = [&]() {
       snprintf( tSQL, MAX_SQL_SIZE, "update R_RULE_EXEC set " );
 
@@ -4019,10 +4019,10 @@ irods::error db_del_child_resc_op(
 	  return PASS(ret);
       }
 
-      
+
 
       return SUCCESS();
-      
+
 
     };
     return execTx( &icss, tx );
@@ -4191,7 +4191,7 @@ irods::error db_del_resc_op(
 	  return CODE( status );
       }
 
-      
+
       return CODE( status );
 
     };
@@ -4868,10 +4868,10 @@ irods::error db_reg_coll_op(
       }
 
 
-      
+
 
       return CODE( status );
-      
+
 
     };
     return execTx( &icss, tx );
@@ -5117,7 +5117,7 @@ irods::error db_reg_zone_op(
 
 
 
-      
+
 
       return SUCCESS();
 
@@ -6250,455 +6250,439 @@ irods::error db_check_auth_op(
                    CAT_INVALID_ARGUMENT,
                    "null parameter" );
     }
-
-    // =-=-=-=-=-=-=-
-    // get a postgres object from the context
-    /*irods::postgres_object_ptr pg;
-    ret = make_db_ptr( _ctx.fco(), pg );
-    if ( !ret.ok() ) {
-        return PASS( ret );
-
-    }*/
-
-    // =-=-=-=-=-=-=-
-    // extract the icss property
-//        icatSessionStruct icss;
-//        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    // =-=-=-=-=-=-=-
-    // All The Variable
-    int status = 0;
-    char md5Buf[CHALLENGE_LEN + MAX_PASSWORD_LEN + 2];
-    char digest[RESPONSE_LEN + 2];
-    const char *cp = NULL;
-    int i = 0, OK = 0, k = 0;
-    char userType[MAX_NAME_LEN];
-    static int prevFailure = 0;
-    char goodPw[MAX_PASSWORD_LEN + 10] = "";
-    char lastPw[MAX_PASSWORD_LEN + 10] = "";
-    char goodPwExpiry[MAX_PASSWORD_LEN + 10] = "";
-    char goodPwTs[MAX_PASSWORD_LEN + 10] = "";
-    char goodPwModTs[MAX_PASSWORD_LEN + 10] = "";
-    rodsLong_t expireTime = 0;
-    char *cpw = NULL;
-    int nPasswords = 0;
-    char myTime[50];
-    time_t nowTime;
-    time_t pwExpireMaxCreateTime;
-    char expireStr[50];
-    char expireStrCreate[50];
-    char myUserZone[MAX_NAME_LEN];
-    char userName2[NAME_LEN + 2];
-    char userZone[NAME_LEN + 2];
-    rodsLong_t pamMinTime = 0;
-    rodsLong_t pamMaxTime = 0;
-    int hashType = 0;
-    char lastPwModTs[MAX_PASSWORD_LEN + 10];
-    snprintf( lastPwModTs, sizeof( lastPwModTs ), "0" );
-    char *cPwTs = NULL;
-    int iTs1 = 0, iTs2 = 0;
-    std::vector<char> pwInfoArray( MAX_PASSWORD_LEN * MAX_PASSWORDS * 4 );
-
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlCheckAuth" );
-    }
-
-    if ( prevFailure > 1 ) {
-        /* Somebody trying a dictionary attack? */
-        if ( prevFailure > 5 ) {
-            sleep( 20 );    /* at least, slow it down */
-        }
-        sleep( 2 );
-    }
-    *_user_priv_level = NO_USER_AUTH;
-    *_client_priv_level = NO_USER_AUTH;
-
-    hashType = HASH_TYPE_MD5;
-    std::string user_name( _user_name );
-    std::string::size_type pos = user_name.find( SHA1_FLAG_STRING );
-    if ( std::string::npos != pos ) {
-        // truncate off the :::sha1 string
-        user_name = user_name.substr( pos );
-        hashType = HASH_TYPE_SHA1;
-    }
-
-    memset( md5Buf, 0, sizeof( md5Buf ) );
-    strncpy( md5Buf, _challenge, CHALLENGE_LEN );
-    snprintf( prevChalSig, sizeof prevChalSig,
-              "%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x",
-              ( unsigned char )md5Buf[0], ( unsigned char )md5Buf[1],
-              ( unsigned char )md5Buf[2], ( unsigned char )md5Buf[3],
-              ( unsigned char )md5Buf[4], ( unsigned char )md5Buf[5],
-              ( unsigned char )md5Buf[6], ( unsigned char )md5Buf[7],
-              ( unsigned char )md5Buf[8], ( unsigned char )md5Buf[9],
-              ( unsigned char )md5Buf[10], ( unsigned char )md5Buf[11],
-              ( unsigned char )md5Buf[12], ( unsigned char )md5Buf[13],
-              ( unsigned char )md5Buf[14], ( unsigned char )md5Buf[15] );
-    status = validateAndParseUserName( user_name.c_str(), userName2, userZone );
-    if ( status ) {
-        return ERROR( status, "Invalid username format" );
-    }
-
-    if ( userZone[0] == '\0' ) {
-        std::string zone;
-        ret = getLocalZone( _ctx.prop_map(), &icss, zone );
-        if ( !ret.ok() ) {
-            return PASS( ret );
-        }
-        snprintf( myUserZone, sizeof( myUserZone ), "%s", zone.c_str() );
-    }
-    else {
-        snprintf( myUserZone, sizeof( myUserZone ), "%s", userZone );
-    }
-
-    if ( _scheme && strlen( _scheme ) > 0 ) {
-        irods::error ret = verify_auth_response( _scheme, _challenge, userName2, _response );
-        if ( !ret.ok() ) {
-            return PASS( ret );
-        }
-        goto checkLevel;
-    }
-
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlCheckAuth SQL 1 " );
-    }
-
-    {
-        std::vector<std::string> bindVars;
-        bindVars.push_back( userName2 );
-        bindVars.push_back( myUserZone );
-        /* four strings per password returned */
-        status = cmlGetMultiRowStringValuesFromSql( "select rcat_password, pass_expiry_ts, R_USER_PASSWORD.create_ts, R_USER_PASSWORD.modify_ts from R_USER_PASSWORD, "
-                 "R_USER_MAIN where user_name=? and zone_name=? and R_USER_MAIN.user_id = R_USER_PASSWORD.user_id",
-                 pwInfoArray.data(), MAX_PASSWORD_LEN, MAX_PASSWORDS * 4, bindVars, &icss );
-    }
-
-    if ( status < 4 ) {
-        if ( status == CAT_NO_ROWS_FOUND ) {
-            status = CAT_INVALID_USER; /* Be a little more specific */
-            if ( strncmp( ANONYMOUS_USER, userName2, NAME_LEN ) == 0 ) {
-                /* anonymous user, skip the pw check but do the rest */
-                goto checkLevel;
-            }
-        }
-        return ERROR( status, "select rcat_password failed" );
-    }
-
-    nPasswords = status / 4; /* four strings per password returned */
-    goodPwExpiry[0] = '\0';
-    goodPwTs[0] = '\0';
-    goodPwModTs[0] = '\0';
-
-    if ( nPasswords == MAX_PASSWORDS ) {
-        {
-            std::vector<std::string> bindVars;
-            bindVars.push_back( userName2 );
-            // There are more than MAX_PASSWORDS in the database take the extra time to get them all.
-            status = cmlGetIntegerValueFromSql( "select count(UP.user_id) from R_USER_PASSWORD UP, R_USER_MAIN where user_name=?",
-                                                &MAX_PASSWORDS, bindVars, &icss );
-        }
-        if ( status < 0 ) {
-            rodsLog( LOG_ERROR, "cmlGetIntegerValueFromSql failed in db_check_auth_op with status %d", status );
-        }
-        nPasswords = MAX_PASSWORDS;
-        pwInfoArray.resize( MAX_PASSWORD_LEN * MAX_PASSWORDS * 4 );
-
-        {
-            std::vector<std::string> bindVars;
-            bindVars.push_back( userName2 );
-            bindVars.push_back( myUserZone );
-            /* four strings per password returned */
-            status = cmlGetMultiRowStringValuesFromSql( "select rcat_password, pass_expiry_ts, R_USER_PASSWORD.create_ts, R_USER_PASSWORD.modify_ts from R_USER_PASSWORD, "
-                     "R_USER_MAIN where user_name=? and zone_name=? and R_USER_MAIN.user_id = R_USER_PASSWORD.user_id",
-                     pwInfoArray.data(), MAX_PASSWORD_LEN, MAX_PASSWORDS * 4, bindVars, &icss );
-        }
-        if ( status < 0 ) {
-            rodsLog( LOG_ERROR, "cmlGetMultiRowStringValuesFromSql failed in db_check_auth_op with status %d", status );
-        }
-    }
-
-    cpw = pwInfoArray.data();
-    for ( k = 0; OK == 0 && k < MAX_PASSWORDS && k < nPasswords; k++ ) {
-        memset( md5Buf, 0, sizeof( md5Buf ) );
-        strncpy( md5Buf, _challenge, CHALLENGE_LEN );
-        rstrcpy( lastPw, cpw, MAX_PASSWORD_LEN );
-        icatDescramble( cpw );
-        strncpy( md5Buf + CHALLENGE_LEN, cpw, MAX_PASSWORD_LEN );
-
-        obfMakeOneWayHash( hashType,
-                           ( unsigned char * )md5Buf, CHALLENGE_LEN + MAX_PASSWORD_LEN,
-                           ( unsigned char * )digest );
-
-        for ( i = 0; i < RESPONSE_LEN; i++ ) {
-            if ( digest[i] == '\0' ) {
-                digest[i]++;
-            }  /* make sure 'string' doesn't end
-                  early (this matches client code) */
-        }
-
-        cp = _response;
-        OK = 1;
-        for ( i = 0; i < RESPONSE_LEN; i++ ) {
-            if ( *cp++ != digest[i] ) {
-                OK = 0;
-            }
-        }
-
-        memset( md5Buf, 0, sizeof( md5Buf ) );
-        if ( OK == 1 ) {
-            rstrcpy( goodPw, cpw, MAX_PASSWORD_LEN );
-            cpw += MAX_PASSWORD_LEN;
-            rstrcpy( goodPwExpiry, cpw, MAX_PASSWORD_LEN );
-            cpw += MAX_PASSWORD_LEN;
-            rstrcpy( goodPwTs, cpw, MAX_PASSWORD_LEN );
-            cpw += MAX_PASSWORD_LEN;
-            rstrcpy( goodPwModTs, cpw, MAX_PASSWORD_LEN );
-        }
-        else {
-            cPwTs = cpw + ( MAX_PASSWORD_LEN * 3 );
-            iTs1 = atoi( cPwTs );
-            iTs2 = atoi( lastPwModTs );
-            if ( iTs1 == iTs2 ) {
-                /* MAX_PASSWORDS at same time-stamp, skip ahead to avoid infinite
-                   loop; things should recover eventually */
-                snprintf( lastPwModTs, sizeof lastPwModTs, "%011d", iTs1 + 1 );
-            }
-            else {
-                /* normal case */
-                rstrcpy( lastPwModTs, cPwTs, sizeof( lastPwModTs ) );
-            }
-
-            cpw += MAX_PASSWORD_LEN * 4;
-        }
-    }
-
-    if ( OK == 0 ) {
-        prevFailure++;
-        return ERROR( CAT_INVALID_AUTHENTICATION, "invalid argument" );
-    }
-
-    expireTime = atoll( goodPwExpiry );
-    getNowStr( myTime );
-    nowTime = atoll( myTime );
-
-    /* Check for PAM_AUTH type passwords */
-    pamMaxTime = atoll( irods_pam_password_max_time );
-    pamMinTime = atoll( irods_pam_password_min_time );
-
-    if ( ( strncmp( goodPwExpiry, "9999", 4 ) != 0 ) &&
-            expireTime >=  pamMinTime &&
-            expireTime <= pamMaxTime ) {
-        time_t modTime;
-        /* The used pw is an iRODS-PAM type, so now check if it's expired */
-        getNowStr( myTime );
-        nowTime = atoll( myTime );
-        modTime = atoll( goodPwModTs );
-
-        if ( modTime + expireTime < nowTime ) {
-            /* it is expired, so return the error below and first remove it */
-            cllBindVars[cllBindVarCount++] = lastPw;
-            cllBindVars[cllBindVarCount++] = goodPwTs;
-            cllBindVars[cllBindVarCount++] = userName2;
-            cllBindVars[cllBindVarCount++] = myUserZone;
-            if ( logSQL != 0 ) {
-                rodsLog( LOG_SQL, "chlCheckAuth SQL 2" );
-            }
-            status = cmlExecuteNoAnswerSql( "delete from R_USER_PASSWORD where rcat_password=? and create_ts=? and user_id = (select user_id from R_USER_MAIN where user_name=? and zone_name=?)", &icss );
-            memset( goodPw, 0, sizeof( goodPw ) );
-            memset( lastPw, 0, sizeof( lastPw ) );
-            if ( status != 0 ) {
-                rodsLog( LOG_NOTICE,
-                         "chlCheckAuth cmlExecuteNoAnswerSql delete expired password failure %d",
-                         status );
-                return ERROR( status, "delete expired password failure" );
-            }
-            status =  cmlExecuteNoAnswerSql( "commit", &icss );
-            if ( status != 0 ) {
-                rodsLog( LOG_NOTICE,
-                         "chlCheckAuth cmlExecuteNoAnswerSql commit failure %d",
-                         status );
-                return ERROR( status, "commit failure" );
-            }
-            return ERROR( CAT_PASSWORD_EXPIRED, "password expired" );
-        }
-    }
-
-    int temp_password_max_time;
-    try {
-        temp_password_max_time = irods::get_advanced_setting<const int>(irods::CFG_MAX_TEMP_PASSWORD_LIFETIME);
-    } catch ( const irods::exception& e ) {
-        return irods::error(e);
-    }
-
-    if ( expireTime < temp_password_max_time ) {
-        int temp_password_time;
-        try {
-            temp_password_time = irods::get_advanced_setting<const int>(irods::CFG_DEF_TEMP_PASSWORD_LIFETIME);
-        } catch ( const irods::exception& e ) {
-            return irods::error(e);
-        }
-
-        /* in the form used by temporary, one-time passwords */
-
-        time_t createTime;
-        int returnExpired;
-
-        /* check if it's expired */
-
-        returnExpired = 0;
-        getNowStr( myTime );
-        nowTime = atoll( myTime );
-        createTime = atoll( goodPwTs );
-        if ( createTime == 0 || nowTime == 0 ) {
-            returnExpired = 1;
-        }
-        if ( createTime + expireTime < nowTime ) {
-            returnExpired = 1;
-        }
+    std::function<boost::variant<irods::error, std::tuple<bool, irods::error>>()> tx = [&]() -> boost::variant<irods::error, std::tuple<bool, irods::error>> {
 
 
-        /* Remove this temporary, one-time password */
-        cllBindVars[cllBindVarCount++] = goodPw;
-        if ( logSQL != 0 ) {
-            rodsLog( LOG_SQL, "chlCheckAuth SQL 2" );
-        }
-        status =  cmlExecuteNoAnswerSql(
-                      "delete from R_USER_PASSWORD where rcat_password=?",
-                      &icss );
-        if ( status != 0 ) {
-            rodsLog( LOG_NOTICE,
-                     "chlCheckAuth cmlExecuteNoAnswerSql delete failure %d",
-                     status );
-            _rollback( "chlCheckAuth" );
-            return ERROR( status, "delete failure" );
-        }
 
-        /* Also remove any expired temporary passwords */
 
-        if ( logSQL != 0 ) {
-            rodsLog( LOG_SQL, "chlCheckAuth SQL 3" );
-        }
-        snprintf( expireStr, sizeof expireStr, "%d", temp_password_time );
-        cllBindVars[cllBindVarCount++] = expireStr;
+      // =-=-=-=-=-=-=-
+      // get a postgres object from the context
+      /*irods::postgres_object_ptr pg;
+      ret = make_db_ptr( _ctx.fco(), pg );
+      if ( !ret.ok() ) {
+          return PASS( ret );
 
-        pwExpireMaxCreateTime = nowTime - temp_password_time;
-        /* Not sure if casting to int is correct but seems OK & avoids warning:*/
-        snprintf( expireStrCreate, sizeof expireStrCreate, "%011d",
-                  ( int )pwExpireMaxCreateTime );
-        cllBindVars[cllBindVarCount++] = expireStrCreate;
+      }*/
 
-        status =  cmlExecuteNoAnswerSql(
-                      "delete from R_USER_PASSWORD where pass_expiry_ts = ? and create_ts < ?",
-                      &icss );
-        if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-            rodsLog( LOG_NOTICE,
-                     "chlCheckAuth cmlExecuteNoAnswerSql delete2 failure %d",
-                     status );
-            _rollback( "chlCheckAuth" );
-            return ERROR( status, "delete2 failed" );
-        }
+      // =-=-=-=-=-=-=-
+      // extract the icss property
+  //        icatSessionStruct icss;
+  //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
+      // =-=-=-=-=-=-=-
+      // All The Variable
+      int status = 0;
+      char md5Buf[CHALLENGE_LEN + MAX_PASSWORD_LEN + 2];
+      char digest[RESPONSE_LEN + 2];
+      const char *cp = NULL;
+      int i = 0, OK = 0, k = 0;
+      char userType[MAX_NAME_LEN];
+      static int prevFailure = 0;
+      char goodPw[MAX_PASSWORD_LEN + 10] = "";
+      char lastPw[MAX_PASSWORD_LEN + 10] = "";
+      char goodPwExpiry[MAX_PASSWORD_LEN + 10] = "";
+      char goodPwTs[MAX_PASSWORD_LEN + 10] = "";
+      char goodPwModTs[MAX_PASSWORD_LEN + 10] = "";
+      rodsLong_t expireTime = 0;
+      char *cpw = NULL;
+      int nPasswords = 0;
+      char myTime[50];
+      time_t nowTime;
+      time_t pwExpireMaxCreateTime;
+      char expireStr[50];
+      char expireStrCreate[50];
+      char myUserZone[MAX_NAME_LEN];
+      char userName2[NAME_LEN + 2];
+      char userZone[NAME_LEN + 2];
+      rodsLong_t pamMinTime = 0;
+      rodsLong_t pamMaxTime = 0;
+      int hashType = 0;
+      char lastPwModTs[MAX_PASSWORD_LEN + 10];
+      snprintf( lastPwModTs, sizeof( lastPwModTs ), "0" );
+      char *cPwTs = NULL;
+      int iTs1 = 0, iTs2 = 0;
+      std::vector<char> pwInfoArray( MAX_PASSWORD_LEN * MAX_PASSWORDS * 4 );
 
-        memset( goodPw, 0, MAX_PASSWORD_LEN );
-        if ( returnExpired ) {
-            return ERROR( CAT_PASSWORD_EXPIRED, "password expired" );
-        }
+      if ( logSQL != 0 ) {
+          rodsLog( LOG_SQL, "chlCheckAuth" );
+      }
 
-        if ( logSQL != 0 ) {
-            rodsLog( LOG_SQL, "chlCheckAuth SQL 4" );
-        }
-        status =  cmlExecuteNoAnswerSql( "commit", &icss );
-        if ( status != 0 ) {
-            rodsLog( LOG_NOTICE,
-                     "chlCheckAuth cmlExecuteNoAnswerSql commit failure %d",
-                     status );
-            return ERROR( status, "commit failure" );
-        }
-        memset( goodPw, 0, MAX_PASSWORD_LEN );
-        if ( returnExpired ) {
-            return ERROR( CAT_PASSWORD_EXPIRED, "password is expired" );
-        }
-    }
+      if ( prevFailure > 1 ) {
+          /* Somebody trying a dictionary attack? */
+          if ( prevFailure > 5 ) {
+              sleep( 20 );    /* at least, slow it down */
+          }
+          sleep( 2 );
+      }
+      *_user_priv_level = NO_USER_AUTH;
+      *_client_priv_level = NO_USER_AUTH;
 
-    /* Get the user type so privilege level can be set */
-checkLevel:
+      hashType = HASH_TYPE_MD5;
+      std::string user_name( _user_name );
+      std::string::size_type pos = user_name.find( SHA1_FLAG_STRING );
+      if ( std::string::npos != pos ) {
+          // truncate off the :::sha1 string
+          user_name = user_name.substr( pos );
+          hashType = HASH_TYPE_SHA1;
+      }
 
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlCheckAuth SQL 5" );
-    }
-    {
-        std::vector<std::string> bindVars;
-        bindVars.push_back( userName2 );
-        bindVars.push_back( myUserZone );
-        status = cmlGetStringValueFromSql(
-                     "select user_type_name from R_USER_MAIN where user_name=? and zone_name=?",
-                     userType, MAX_NAME_LEN, bindVars, &icss );
-    }
-    if ( status != 0 ) {
-        if ( status == CAT_NO_ROWS_FOUND ) {
-            status = CAT_INVALID_USER; /* Be a little more specific */
-        }
-        else {
-            _rollback( "chlCheckAuth" );
-        }
-        return ERROR( status, "select user_type_name failed" );
-    }
-    *_user_priv_level = LOCAL_USER_AUTH;
-    if ( strcmp( userType, "rodsadmin" ) == 0 ) {
-        *_user_priv_level = LOCAL_PRIV_USER_AUTH;
+      memset( md5Buf, 0, sizeof( md5Buf ) );
+      strncpy( md5Buf, _challenge, CHALLENGE_LEN );
+      snprintf( prevChalSig, sizeof prevChalSig,
+                "%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x",
+                ( unsigned char )md5Buf[0], ( unsigned char )md5Buf[1],
+                ( unsigned char )md5Buf[2], ( unsigned char )md5Buf[3],
+                ( unsigned char )md5Buf[4], ( unsigned char )md5Buf[5],
+                ( unsigned char )md5Buf[6], ( unsigned char )md5Buf[7],
+                ( unsigned char )md5Buf[8], ( unsigned char )md5Buf[9],
+                ( unsigned char )md5Buf[10], ( unsigned char )md5Buf[11],
+                ( unsigned char )md5Buf[12], ( unsigned char )md5Buf[13],
+                ( unsigned char )md5Buf[14], ( unsigned char )md5Buf[15] );
+      status = validateAndParseUserName( user_name.c_str(), userName2, userZone );
+      if ( status ) {
+          return ERROR( status, "Invalid username format" );
+      }
 
-        /* Since the user is admin, also get the client privilege level */
-        if ( strcmp( _ctx.comm()->clientUser.userName, userName2 ) == 0 &&
-                strcmp( _ctx.comm()->clientUser.rodsZone, userZone ) == 0 ) {
-            *_client_priv_level = LOCAL_PRIV_USER_AUTH; /* same user, no query req */
-        }
-        else {
-            if ( _ctx.comm()->clientUser.userName[0] == '\0' ) {
-                /*
-                   When using GSI, the client might not provide a user
-                   name, in which case we avoid the query below (which
-                   would fail) and instead set up minimal privileges.
-                   This is safe since we have just authenticated the
-                   remote server as an admin account.  This will allow
-                   some queries (including the one needed for retrieving
-                   the client's DNs).  Since the clientUser is not set,
-                   some other queries are still exclued.  The non-IES will
-                   reconnect once the rodsUserName is determined.  In
-                   iRODS 2.3 this would return an error.
-                 */
-                *_client_priv_level = REMOTE_USER_AUTH;
-                prevFailure = 0;
-                return SUCCESS();
-            }
-            else {
-                if ( logSQL != 0 ) {
-                    rodsLog( LOG_SQL, "chlCheckAuth SQL 6" );
-                }
-                {
-                    std::vector<std::string> bindVars;
-                    bindVars.push_back( _ctx.comm()->clientUser.userName );
-                    bindVars.push_back( _ctx.comm()->clientUser.rodsZone );
-                    status = cmlGetStringValueFromSql(
-                                 "select user_type_name from R_USER_MAIN where user_name=? and zone_name=?",
-                                 userType, MAX_NAME_LEN, bindVars, &icss );
-                }
-                if ( status != 0 ) {
-                    if ( status == CAT_NO_ROWS_FOUND ) {
-                        status = CAT_INVALID_CLIENT_USER; /* more specific */
-                    }
-                    else {
-                        _rollback( "chlCheckAuth" );
-                    }
-                    return ERROR( status, "select user_type_name failed" );
-                }
-                *_client_priv_level = LOCAL_USER_AUTH;
-                if ( strcmp( userType, "rodsadmin" ) == 0 ) {
-                    *_client_priv_level = LOCAL_PRIV_USER_AUTH;
-                }
-            }
-        }
-    }
+      if ( userZone[0] == '\0' ) {
+          std::string zone;
+          ret = getLocalZone( _ctx.prop_map(), &icss, zone );
+          if ( !ret.ok() ) {
+              return PASS( ret );
+          }
+          snprintf( myUserZone, sizeof( myUserZone ), "%s", zone.c_str() );
+      }
+      else {
+          snprintf( myUserZone, sizeof( myUserZone ), "%s", userZone );
+      }
 
-    prevFailure = 0;
-    return SUCCESS();
+      if ( _scheme && strlen( _scheme ) > 0 ) {
+          irods::error ret = verify_auth_response( _scheme, _challenge, userName2, _response );
+          if ( !ret.ok() ) {
+              return PASS( ret );
+          }
+          goto checkLevel;
+      }
+
+      if ( logSQL != 0 ) {
+          rodsLog( LOG_SQL, "chlCheckAuth SQL 1 " );
+      }
+
+      {
+          std::vector<std::string> bindVars;
+          bindVars.push_back( userName2 );
+          bindVars.push_back( myUserZone );
+          /* four strings per password returned */
+          status = cmlGetMultiRowStringValuesFromSql( "select rcat_password, pass_expiry_ts, R_USER_PASSWORD.create_ts, R_USER_PASSWORD.modify_ts from R_USER_PASSWORD, "
+                   "R_USER_MAIN where user_name=? and zone_name=? and R_USER_MAIN.user_id = R_USER_PASSWORD.user_id",
+                   pwInfoArray.data(), MAX_PASSWORD_LEN, MAX_PASSWORDS * 4, bindVars, &icss );
+      }
+
+      if ( status < 4 ) {
+          if ( status == CAT_NO_ROWS_FOUND ) {
+              status = CAT_INVALID_USER; /* Be a little more specific */
+              if ( strncmp( ANONYMOUS_USER, userName2, NAME_LEN ) == 0 ) {
+                  /* anonymous user, skip the pw check but do the rest */
+                  goto checkLevel;
+              }
+          }
+          return ERROR( status, "select rcat_password failed" );
+      }
+
+      nPasswords = status / 4; /* four strings per password returned */
+      goodPwExpiry[0] = '\0';
+      goodPwTs[0] = '\0';
+      goodPwModTs[0] = '\0';
+
+      if ( nPasswords == MAX_PASSWORDS ) {
+          {
+              std::vector<std::string> bindVars;
+              bindVars.push_back( userName2 );
+              // There are more than MAX_PASSWORDS in the database take the extra time to get them all.
+              status = cmlGetIntegerValueFromSql( "select count(UP.user_id) from R_USER_PASSWORD UP, R_USER_MAIN where user_name=?",
+                                                  &MAX_PASSWORDS, bindVars, &icss );
+          }
+          if ( status < 0 ) {
+              rodsLog( LOG_ERROR, "cmlGetIntegerValueFromSql failed in db_check_auth_op with status %d", status );
+          }
+          nPasswords = MAX_PASSWORDS;
+          pwInfoArray.resize( MAX_PASSWORD_LEN * MAX_PASSWORDS * 4 );
+
+          {
+              std::vector<std::string> bindVars;
+              bindVars.push_back( userName2 );
+              bindVars.push_back( myUserZone );
+              /* four strings per password returned */
+              status = cmlGetMultiRowStringValuesFromSql( "select rcat_password, pass_expiry_ts, R_USER_PASSWORD.create_ts, R_USER_PASSWORD.modify_ts from R_USER_PASSWORD, "
+                       "R_USER_MAIN where user_name=? and zone_name=? and R_USER_MAIN.user_id = R_USER_PASSWORD.user_id",
+                       pwInfoArray.data(), MAX_PASSWORD_LEN, MAX_PASSWORDS * 4, bindVars, &icss );
+          }
+          if ( status < 0 ) {
+              rodsLog( LOG_ERROR, "cmlGetMultiRowStringValuesFromSql failed in db_check_auth_op with status %d", status );
+          }
+      }
+
+      cpw = pwInfoArray.data();
+      for ( k = 0; OK == 0 && k < MAX_PASSWORDS && k < nPasswords; k++ ) {
+          memset( md5Buf, 0, sizeof( md5Buf ) );
+          strncpy( md5Buf, _challenge, CHALLENGE_LEN );
+          rstrcpy( lastPw, cpw, MAX_PASSWORD_LEN );
+          icatDescramble( cpw );
+          strncpy( md5Buf + CHALLENGE_LEN, cpw, MAX_PASSWORD_LEN );
+
+          obfMakeOneWayHash( hashType,
+                             ( unsigned char * )md5Buf, CHALLENGE_LEN + MAX_PASSWORD_LEN,
+                             ( unsigned char * )digest );
+
+          for ( i = 0; i < RESPONSE_LEN; i++ ) {
+              if ( digest[i] == '\0' ) {
+                  digest[i]++;
+              }  /* make sure 'string' doesn't end
+                    early (this matches client code) */
+          }
+
+          cp = _response;
+          OK = 1;
+          for ( i = 0; i < RESPONSE_LEN; i++ ) {
+              if ( *cp++ != digest[i] ) {
+                  OK = 0;
+              }
+          }
+
+          memset( md5Buf, 0, sizeof( md5Buf ) );
+          if ( OK == 1 ) {
+              rstrcpy( goodPw, cpw, MAX_PASSWORD_LEN );
+              cpw += MAX_PASSWORD_LEN;
+              rstrcpy( goodPwExpiry, cpw, MAX_PASSWORD_LEN );
+              cpw += MAX_PASSWORD_LEN;
+              rstrcpy( goodPwTs, cpw, MAX_PASSWORD_LEN );
+              cpw += MAX_PASSWORD_LEN;
+              rstrcpy( goodPwModTs, cpw, MAX_PASSWORD_LEN );
+          }
+          else {
+              cPwTs = cpw + ( MAX_PASSWORD_LEN * 3 );
+              iTs1 = atoi( cPwTs );
+              iTs2 = atoi( lastPwModTs );
+              if ( iTs1 == iTs2 ) {
+                  /* MAX_PASSWORDS at same time-stamp, skip ahead to avoid infinite
+                     loop; things should recover eventually */
+                  snprintf( lastPwModTs, sizeof lastPwModTs, "%011d", iTs1 + 1 );
+              }
+              else {
+                  /* normal case */
+                  rstrcpy( lastPwModTs, cPwTs, sizeof( lastPwModTs ) );
+              }
+
+              cpw += MAX_PASSWORD_LEN * 4;
+          }
+      }
+
+      if ( OK == 0 ) {
+          prevFailure++;
+          return ERROR( CAT_INVALID_AUTHENTICATION, "invalid argument" );
+      }
+
+      expireTime = atoll( goodPwExpiry );
+      getNowStr( myTime );
+      nowTime = atoll( myTime );
+
+      /* Check for PAM_AUTH type passwords */
+      pamMaxTime = atoll( irods_pam_password_max_time );
+      pamMinTime = atoll( irods_pam_password_min_time );
+
+      if ( ( strncmp( goodPwExpiry, "9999", 4 ) != 0 ) &&
+              expireTime >=  pamMinTime &&
+              expireTime <= pamMaxTime ) {
+          time_t modTime;
+          /* The used pw is an iRODS-PAM type, so now check if it's expired */
+          getNowStr( myTime );
+          nowTime = atoll( myTime );
+          modTime = atoll( goodPwModTs );
+
+          if ( modTime + expireTime < nowTime ) {
+              /* it is expired, so return the error below and first remove it */
+              cllBindVars[cllBindVarCount++] = lastPw;
+              cllBindVars[cllBindVarCount++] = goodPwTs;
+              cllBindVars[cllBindVarCount++] = userName2;
+              cllBindVars[cllBindVarCount++] = myUserZone;
+              if ( logSQL != 0 ) {
+                  rodsLog( LOG_SQL, "chlCheckAuth SQL 2" );
+              }
+              status = cmlExecuteNoAnswerSql( "delete from R_USER_PASSWORD where rcat_password=? and create_ts=? and user_id = (select user_id from R_USER_MAIN where user_name=? and zone_name=?)", &icss );
+              memset( goodPw, 0, sizeof( goodPw ) );
+              memset( lastPw, 0, sizeof( lastPw ) );
+              if ( status != 0 ) {
+                  rodsLog( LOG_NOTICE,
+                           "chlCheckAuth cmlExecuteNoAnswerSql delete expired password failure %d",
+                           status );
+                  return ERROR( status, "delete expired password failure" );
+              }
+              return std::make_tuple(true, ERROR( CAT_PASSWORD_EXPIRED, "password expired" ));
+          }
+      }
+
+      int temp_password_max_time;
+      try {
+          temp_password_max_time = irods::get_advanced_setting<const int>(irods::CFG_MAX_TEMP_PASSWORD_LIFETIME);
+      } catch ( const irods::exception& e ) {
+          return irods::error(e);
+      }
+
+      if ( expireTime < temp_password_max_time ) {
+          int temp_password_time;
+          try {
+              temp_password_time = irods::get_advanced_setting<const int>(irods::CFG_DEF_TEMP_PASSWORD_LIFETIME);
+          } catch ( const irods::exception& e ) {
+              return irods::error(e);
+          }
+
+          /* in the form used by temporary, one-time passwords */
+
+          time_t createTime;
+          int returnExpired;
+
+          /* check if it's expired */
+
+          returnExpired = 0;
+          getNowStr( myTime );
+          nowTime = atoll( myTime );
+          createTime = atoll( goodPwTs );
+          if ( createTime == 0 || nowTime == 0 ) {
+              returnExpired = 1;
+          }
+          if ( createTime + expireTime < nowTime ) {
+              returnExpired = 1;
+          }
+
+
+          /* Remove this temporary, one-time password */
+          cllBindVars[cllBindVarCount++] = goodPw;
+          if ( logSQL != 0 ) {
+              rodsLog( LOG_SQL, "chlCheckAuth SQL 2" );
+          }
+          status =  cmlExecuteNoAnswerSql(
+                        "delete from R_USER_PASSWORD where rcat_password=?",
+                        &icss );
+          if ( status != 0 ) {
+              rodsLog( LOG_NOTICE,
+                       "chlCheckAuth cmlExecuteNoAnswerSql delete failure %d",
+                       status );
+              _rollback( "chlCheckAuth" );
+              return ERROR( status, "delete failure" );
+          }
+
+          /* Also remove any expired temporary passwords */
+
+          if ( logSQL != 0 ) {
+              rodsLog( LOG_SQL, "chlCheckAuth SQL 3" );
+          }
+          snprintf( expireStr, sizeof expireStr, "%d", temp_password_time );
+          cllBindVars[cllBindVarCount++] = expireStr;
+
+          pwExpireMaxCreateTime = nowTime - temp_password_time;
+          /* Not sure if casting to int is correct but seems OK & avoids warning:*/
+          snprintf( expireStrCreate, sizeof expireStrCreate, "%011d",
+                    ( int )pwExpireMaxCreateTime );
+          cllBindVars[cllBindVarCount++] = expireStrCreate;
+
+          status =  cmlExecuteNoAnswerSql(
+                        "delete from R_USER_PASSWORD where pass_expiry_ts = ? and create_ts < ?",
+                        &icss );
+          if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+              rodsLog( LOG_NOTICE,
+                       "chlCheckAuth cmlExecuteNoAnswerSql delete2 failure %d",
+                       status );
+              _rollback( "chlCheckAuth" );
+              return ERROR( status, "delete2 failed" );
+          }
+
+          memset( goodPw, 0, MAX_PASSWORD_LEN );
+          if ( returnExpired ) {
+              return ERROR( CAT_PASSWORD_EXPIRED, "password expired" );
+          }
+
+      }
+      /* Get the user type so privilege level can be set */
+  checkLevel:
+
+      if ( logSQL != 0 ) {
+          rodsLog( LOG_SQL, "chlCheckAuth SQL 5" );
+      }
+      {
+          std::vector<std::string> bindVars;
+          bindVars.push_back( userName2 );
+          bindVars.push_back( myUserZone );
+          status = cmlGetStringValueFromSql(
+                       "select user_type_name from R_USER_MAIN where user_name=? and zone_name=?",
+                       userType, MAX_NAME_LEN, bindVars, &icss );
+      }
+      if ( status != 0 ) {
+          if ( status == CAT_NO_ROWS_FOUND ) {
+              status = CAT_INVALID_USER; /* Be a little more specific */
+          }
+          else {
+              _rollback( "chlCheckAuth" );
+          }
+          return ERROR( status, "select user_type_name failed" );
+      }
+      *_user_priv_level = LOCAL_USER_AUTH;
+      if ( strcmp( userType, "rodsadmin" ) == 0 ) {
+          *_user_priv_level = LOCAL_PRIV_USER_AUTH;
+
+          /* Since the user is admin, also get the client privilege level */
+          if ( strcmp( _ctx.comm()->clientUser.userName, userName2 ) == 0 &&
+                  strcmp( _ctx.comm()->clientUser.rodsZone, userZone ) == 0 ) {
+              *_client_priv_level = LOCAL_PRIV_USER_AUTH; /* same user, no query req */
+          }
+          else {
+              if ( _ctx.comm()->clientUser.userName[0] == '\0' ) {
+                  /*
+                     When using GSI, the client might not provide a user
+                     name, in which case we avoid the query below (which
+                     would fail) and instead set up minimal privileges.
+                     This is safe since we have just authenticated the
+                     remote server as an admin account.  This will allow
+                     some queries (including the one needed for retrieving
+                     the client's DNs).  Since the clientUser is not set,
+                     some other queries are still exclued.  The non-IES will
+                     reconnect once the rodsUserName is determined.  In
+                     iRODS 2.3 this would return an error.
+                   */
+                  *_client_priv_level = REMOTE_USER_AUTH;
+                  prevFailure = 0;
+                  return SUCCESS();
+              }
+              else {
+                  if ( logSQL != 0 ) {
+                      rodsLog( LOG_SQL, "chlCheckAuth SQL 6" );
+                  }
+                  {
+                      std::vector<std::string> bindVars;
+                      bindVars.push_back( _ctx.comm()->clientUser.userName );
+                      bindVars.push_back( _ctx.comm()->clientUser.rodsZone );
+                      status = cmlGetStringValueFromSql(
+                                   "select user_type_name from R_USER_MAIN where user_name=? and zone_name=?",
+                                   userType, MAX_NAME_LEN, bindVars, &icss );
+                  }
+                  if ( status != 0 ) {
+                      if ( status == CAT_NO_ROWS_FOUND ) {
+                          status = CAT_INVALID_CLIENT_USER; /* more specific */
+                      }
+                      else {
+                          _rollback( "chlCheckAuth" );
+                      }
+                      return ERROR( status, "select user_type_name failed" );
+                  }
+                  *_client_priv_level = LOCAL_USER_AUTH;
+                  if ( strcmp( userType, "rodsadmin" ) == 0 ) {
+                      *_client_priv_level = LOCAL_PRIV_USER_AUTH;
+                  }
+              }
+          }
+      }
+
+      prevFailure = 0;
+      return SUCCESS();
+  };
+  return execTx( &icss, tx );
 
 } // db_check_auth_op
 
@@ -8417,7 +8401,7 @@ irods::error db_mod_resc_data_paths_op(
 	  return ERROR( status, "failed to update path" );
       }
 
-      
+
 
       return SUCCESS();
 
@@ -11933,7 +11917,7 @@ irods::error db_set_quota_op(
     if ( !ret.ok() ) {
         return PASS( ret );
     }
-    
+
     std::function<irods::error()> tx = [&]() {
       /* Get the resource id; use rescId=0 for 'total' */
       rescId = 0;

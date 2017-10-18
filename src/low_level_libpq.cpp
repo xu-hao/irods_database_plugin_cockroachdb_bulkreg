@@ -177,24 +177,30 @@ std::tuple<int, std::string> processRes(const std::string &_sql, const std::vect
       int result = 0;
       if ( stat == PGRES_COMMAND_OK ||
 	      stat == PGRES_TUPLES_OK ) {
-	  if ( ! boost::iequals( _sql, "begin" )  &&
-		  ! boost::iequals( _sql, "commit" ) &&
-		  ! boost::iequals( _sql, "rollback" ) ) {
-	      if ( atoi(PQcmdTuples(res)) == 0 ) {
-		  result = CAT_SUCCESS_BUT_WITH_NO_INFO;
-	      }
-	  }
+    	  if ( ! boost::iequals( _sql, "begin" )  &&
+    		  ! boost::iequals( _sql, "commit" ) &&
+    		  ! boost::iequals( _sql, "rollback" ) &&
+          ! boost::iequals(_sql, "savepoint cockroach_restart") &&
+          ! boost::iequals(_sql, "release savepoint cockroach_restart") &&
+          ! boost::iequals(_sql, "rollback to savepoint cockroach_restart") ) {
+    	      if ( atoi(PQcmdTuples(res)) == 0 ) {
+              result = CAT_SUCCESS_BUT_WITH_NO_INFO;
+    	      }
+    	  }
+
+        return std::make_tuple(result, "");
       }
       else {
-	  logBindVariables( LOG_NOTICE, bindVars );
-	  rodsLog( LOG_NOTICE, "_execSql: PQexecParams error: %s sql:%s",
-		  PQresStatus(stat), _sql.c_str() );
-	  result = logPsgError( LOG_NOTICE, res );
-	  PQclear(res);
-	  res = NULL;
+    	  logBindVariables( LOG_NOTICE, bindVars );
+    	  rodsLog( LOG_NOTICE, "_execSql: PQexecParams error: %s sql:%s",
+    		  PQresStatus(stat), _sql.c_str() );
+    	  result = logPsgError( LOG_NOTICE, res );
+    	  PQclear(res);
+    	  res = NULL;
+
+        return std::make_tuple(result, std::string(PQresultErrorField(res, PG_DIAG_SQLSTATE)));
       }
 
-      return std::make_tuple(result, std::string(PQresultErrorField(res, PG_DIAG_SQLSTATE)));
 }
 
 std::tuple<int, std::string> _execTxSql(PGconn *conn, const std::string &_sql) {
@@ -203,25 +209,33 @@ std::tuple<int, std::string> _execTxSql(PGconn *conn, const std::string &_sql) {
   return processRes(_sql, std::vector<std::string>(), res);
 }
 
+std::tuple<bool, irods::error> _result_visitor::operator()(const irods::error &result) const
+{
+    return std::make_tuple(result.ok(), result);
+}
+
+std::tuple<bool, irods::error> _result_visitor::operator()(const std::tuple<bool, irods::error> & result) const
+{
+    return result;
+}
+
 irods::error execTx(const icatSessionStruct *icss, const boost::variant<std::function<irods::error()>, std::function<boost::variant<irods::error, std::tuple<bool, irods::error>>()>> &func) {
 
   PGconn *conn = (PGconn *) icss->connectPtr;
 
   int result = std::get<0>(_execTxSql(conn, "begin"));
   if(result < 0) {
-        rodsLog( LOG_NOTICE,
-                     "begin failure %d",
-                     result );
-        return ERROR( result, "begin failure" );
-    return CODE(result);
+    rodsLog( LOG_NOTICE,
+                 "begin failure %d",
+                 result );
+    return ERROR( result, "begin failure" );
   }
   result = std::get<0>(_execTxSql(conn, "savepoint cockroach_restart"));
   if(result < 0) {
-        rodsLog( LOG_NOTICE,
-                     "savepoint cockroach_restart failure %d",
-                     result );
-        return ERROR( result, "savepoint cockroach_restart failure" );
-    return CODE(result);
+    rodsLog( LOG_NOTICE,
+                 "savepoint cockroach_restart failure %d",
+                 result );
+    return ERROR( result, "savepoint cockroach_restart failure" );
   }
   class _execTxSql_visitor : public boost::static_visitor<std::tuple<bool, irods::error>>
   {
@@ -234,21 +248,8 @@ irods::error execTx(const icatSessionStruct *icss, const boost::variant<std::fun
 
     std::tuple<bool, irods::error> operator()(const std::function<boost::variant<irods::error, std::tuple<bool, irods::error>>()> & func) const
     {
-        class _execTxSql_result_visitor : public boost::static_visitor<std::tuple<bool, irods::error>>
-        {
-        public:
-          std::tuple<bool, irods::error> operator()(const irods::error &result) const
-          {
-              return std::make_tuple(result.ok(), result);
-          }
-
-          std::tuple<bool, irods::error> operator()(const std::tuple<bool, irods::error> & result) const
-          {
-              return result;
-          }
-        };
         auto result = func();
-        return boost::apply_visitor(_execTxSql_result_visitor(), result);
+        return boost::apply_visitor(_result_visitor(), result);
     }
   };
   while(true) {
@@ -269,14 +270,14 @@ irods::error execTx(const icatSessionStruct *icss, const boost::variant<std::fun
                      "release savepoint cockroach_restart failure %d",
                      result );
       if(std::get<1>(result2) == "40001") {
-	result = std::get<0>(_execTxSql(conn, "rollback to savepoint cockroach_restart"));
-	if(!(result < 0)) {
-	  continue;
-	} else {
-	  rodsLog( LOG_NOTICE,
-                     "rollback to savepoint cockroach_restart failure %d",
-                     result );
-	}
+      	result = std::get<0>(_execTxSql(conn, "rollback to savepoint cockroach_restart"));
+      	if(!(result < 0)) {
+      	  continue;
+      	} else {
+      	  rodsLog( LOG_NOTICE,
+                           "rollback to savepoint cockroach_restart failure %d",
+                           result );
+      	}
       }
       result = std::get<0>(_execTxSql(conn, "rollback"));
       if(result < 0) {
@@ -285,7 +286,7 @@ irods::error execTx(const icatSessionStruct *icss, const boost::variant<std::fun
                      result );
         return ERROR( result, "rollback failure" );
       }
-      return CODE(std::get<0>(result2));
+      return ERROR(std::get<0>(result2), "release savepoint cockroach_restart failure");
 
     } else {
       result = std::get<0>(_execTxSql(conn, "commit"));
@@ -437,7 +438,7 @@ cllExecSqlNoResult( const icatSessionStruct *icss, const char *sql ) {
 
     std::vector<std::string> bindVars;
     if ( cllGetBindVars( bindVars ) != 0 ) {
-	return -1;
+	     return -1;
     }
     return execSql( icss, sql, bindVars);
 }

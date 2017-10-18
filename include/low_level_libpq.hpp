@@ -61,6 +61,13 @@ private:
 extern int cllBindVarCount;
 extern const char *cllBindVars[MAX_BIND_VARS];
 extern std::vector<result_set *> result_sets;
+class _result_visitor : public boost::static_visitor<std::tuple<bool, irods::error>>
+{
+public:
+  std::tuple<bool, irods::error> operator()(const irods::error &result) const;
+
+  std::tuple<bool, irods::error> operator()(const std::tuple<bool, irods::error> & result) const;
+};
 
 irods::error execTx(const icatSessionStruct *icss, const boost::variant<std::function<irods::error()>, std::function<boost::variant<irods::error, std::tuple<bool, irods::error>>()>> &func);
 int execSql(const icatSessionStruct *icss, result_set **_resset, const std::string &sql, const std::vector<std::string> &bindVars = std::vector<std::string>());

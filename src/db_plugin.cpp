@@ -1492,8 +1492,7 @@ int _modInheritance( int inheritFlag, int recursiveFlag, const char *collIdStr, 
               newValue );
 
 
-    status =  cmlExecuteNoAnswerSql( "commit", &icss );
-    return status;
+    return 0;
 }
 
 /*
@@ -7172,19 +7171,12 @@ irods::error db_update_pam_password_op(
 		  return ERROR( status, "password update error" );
 	      }
 
-	      status =  cmlExecuteNoAnswerSql( "commit", &icss );
-	      if ( status != 0 ) {
-		  rodsLog( LOG_NOTICE,
-			  "chlUpdateIrodsPamPassword cmlExecuteNoAnswerSql commit failure %d",
-			  status );
-		  return ERROR( status, "commit failure" );
-	      }
+
 	  } // if !irods_pam_auth_no_extend
 	  icatDescramble( passwordInIcat );
 	  strncpy( *_irods_password, passwordInIcat, irods_pam_password_len );
 	  return SUCCESS();
-      }
-
+  }
       // =-=-=-=-=-=-=-
       // if the resultant scrambled password has a ' in the
       // string, this can cause issues on some systems, notably
@@ -9554,7 +9546,7 @@ irods::error db_del_avu_metadata_op(
     if ( itype == 0 ) {
         return ERROR( CAT_INVALID_ARGUMENT, "invalid type" );
     }
-    std::function<irods::error()> tx = [&]() {
+    std::function<irods::error()> tx = [&]() -> irods::error {
 
       if ( itype == 1 ) {
 	  status = splitPathByKey( _name,
@@ -9733,16 +9725,8 @@ irods::error db_del_avu_metadata_op(
 	  }
 
 
-	  if ( _nocommit != 1 ) {
-	      status =  cmlExecuteNoAnswerSql( "commit", &icss );
-	      if ( status != 0 ) {
-		  rodsLog( LOG_NOTICE,
-			  "chlDeleteAVUMetadata cmlExecuteNoAnswerSql commit failure %d",
-			  status );
-		  return ERROR( status, "commit failure" );
-	      }
-	  }
-	  return ERROR( status, "delete failure" );
+
+	  return SUCCESS();
       }
 
       cllBindVars[cllBindVarCount++] = objIdStr;
@@ -10375,8 +10359,7 @@ irods::error db_mod_access_control_op(
 	      }
 
 
-	      status =  cmlExecuteNoAnswerSql( "commit", &icss );
-	      return ERROR( status, "commit failiure" );
+	      return SUCCESS();
 	  }
 
 	  /* doing a collection, non-recursive */
@@ -10393,8 +10376,7 @@ irods::error db_mod_access_control_op(
 	      return ERROR( status, "delete failure" );
 	  }
 	  if ( rmFlag ) { /* just removing */
-	      status =  cmlExecuteNoAnswerSql( "commit", &icss );
-	      return ERROR( status, "commit failure" );
+        return SUCCESS();
 	  }
 
 	  char myTime[50];
@@ -10416,8 +10398,7 @@ irods::error db_mod_access_control_op(
 	      return ERROR( status, "insert failure" );
 	  }
 
-	  status =  cmlExecuteNoAnswerSql( "commit", &icss );
-	  return ERROR( status, "commit failure" );
+    return SUCCESS();
       }
 
 
@@ -10470,8 +10451,7 @@ irods::error db_mod_access_control_op(
       if ( rmFlag ) { /* just removing */
 
 
-	  status =  cmlExecuteNoAnswerSql( "commit", &icss );
-	  return ERROR( status, "commit failure" );
+        return SUCCESS();
       }
 
       char myTime[50];
@@ -12907,7 +12887,8 @@ irods::error db_add_specific_query_op(
         return PASS( ret );
     }
 
-    // =-=-=-=-=-=-=-
+    std::function<irods::error()> tx = [&]() {
+  // =-=-=-=-=-=-=-
     // get a postgres object from the context
     /*irods::postgres_object_ptr pg;
     ret = make_db_ptr( _ctx.fco(), pg );
@@ -12988,13 +12969,11 @@ irods::error db_add_specific_query_op(
         return ERROR( status, "insert failure" );
     }
 
-    status = cmlExecuteNoAnswerSql( "commit", &icss );
-    if ( status < 0 ) {
-        return ERROR( status, "commit failed" );
-    }
-    else {
-        return SUCCESS();
-    }
+
+  };
+  return execTx( &icss, tx );
+
+
 
 } // db_add_specific_query_op
 
@@ -13738,601 +13717,539 @@ irods::error db_mod_ticket_op(
         return PASS( ret );
     }
 
-    // =-=-=-=-=-=-=-
-    // get a postgres object from the context
-    /*irods::postgres_object_ptr pg;
-    ret = make_db_ptr( _ctx.fco(), pg );
-    if ( !ret.ok() ) {
-        return PASS( ret );
+    std::function<irods::error()> tx = [&]() {
+      // =-=-=-=-=-=-=-
+      // get a postgres object from the context
+      /*irods::postgres_object_ptr pg;
+      ret = make_db_ptr( _ctx.fco(), pg );
+      if ( !ret.ok() ) {
+          return PASS( ret );
 
-    }*/
+      }*/
 
-    // =-=-=-=-=-=-=-
-    // extract the icss property
-//        icatSessionStruct icss;
-//        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    rodsLong_t status, status2, status3;
-    char logicalEndName[MAX_NAME_LEN];
-    char logicalParentDirName[MAX_NAME_LEN];
-    rodsLong_t objId = 0;
-    rodsLong_t userId;
-    rodsLong_t ticketId;
-    rodsLong_t seqNum;
-    char seqNumStr[NAME_LEN];
-    char objIdStr[NAME_LEN];
-    char objTypeStr[NAME_LEN];
-    char userIdStr[NAME_LEN];
-    char user2IdStr[MAX_NAME_LEN];
-    char group2IdStr[NAME_LEN];
-    char ticketIdStr[NAME_LEN];
-    char ticketType[NAME_LEN];
-    int i;
-    char myTime[50];
+      // =-=-=-=-=-=-=-
+      // extract the icss property
+  //        icatSessionStruct icss;
+  //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
+      rodsLong_t status, status2, status3;
+      char logicalEndName[MAX_NAME_LEN];
+      char logicalParentDirName[MAX_NAME_LEN];
+      rodsLong_t objId = 0;
+      rodsLong_t userId;
+      rodsLong_t ticketId;
+      rodsLong_t seqNum;
+      char seqNumStr[NAME_LEN];
+      char objIdStr[NAME_LEN];
+      char objTypeStr[NAME_LEN];
+      char userIdStr[NAME_LEN];
+      char user2IdStr[MAX_NAME_LEN];
+      char group2IdStr[NAME_LEN];
+      char ticketIdStr[NAME_LEN];
+      char ticketType[NAME_LEN];
+      int i;
+      char myTime[50];
 
-    status = 0;
+      status = 0;
 
-    /* session ticket */
-    if ( strcmp( _op_name, "session" ) == 0 ) {
-        if ( strlen( _arg3 ) > 0 ) {
-            /* for 2 server hops, arg3 is the original client addr */
-            status = chlGenQueryTicketSetup( _ticket_string, _arg3 );
-            snprintf( mySessionTicket, sizeof( mySessionTicket ), "%s", _ticket_string );
-            snprintf( mySessionClientAddr, sizeof( mySessionClientAddr ), "%s", _arg3 );
-        }
-        else {
-            /* for direct connections, rsComm has the original client addr */
-            status = chlGenQueryTicketSetup( _ticket_string, _ctx.comm()->clientAddr );
-            snprintf( mySessionTicket, sizeof( mySessionTicket ), "%s", _ticket_string );
-            snprintf( mySessionClientAddr, sizeof( mySessionClientAddr ), "%s", _ctx.comm()->clientAddr );
-        }
-        return SUCCESS();
-    }
+      /* session ticket */
+      if ( strcmp( _op_name, "session" ) == 0 ) {
+          if ( strlen( _arg3 ) > 0 ) {
+              /* for 2 server hops, arg3 is the original client addr */
+              status = chlGenQueryTicketSetup( _ticket_string, _arg3 );
+              snprintf( mySessionTicket, sizeof( mySessionTicket ), "%s", _ticket_string );
+              snprintf( mySessionClientAddr, sizeof( mySessionClientAddr ), "%s", _arg3 );
+          }
+          else {
+              /* for direct connections, rsComm has the original client addr */
+              status = chlGenQueryTicketSetup( _ticket_string, _ctx.comm()->clientAddr );
+              snprintf( mySessionTicket, sizeof( mySessionTicket ), "%s", _ticket_string );
+              snprintf( mySessionClientAddr, sizeof( mySessionClientAddr ), "%s", _ctx.comm()->clientAddr );
+          }
+          return SUCCESS();
+      }
 
-    /* create */
-    if ( strcmp( _op_name, "create" ) == 0 ) {
+      /* create */
+      if ( strcmp( _op_name, "create" ) == 0 ) {
 
-        if (isInteger(const_cast<char*>(_ticket_string))) {
-            rodsLog( LOG_NOTICE, "chlModTicket create ticket, string cannot be a number [%s]", _ticket_string );
-            return ERROR( CAT_TICKET_INVALID, "ticket string cannot be a number" );
-        }
+          if (isInteger(const_cast<char*>(_ticket_string))) {
+              rodsLog( LOG_NOTICE, "chlModTicket create ticket, string cannot be a number [%s]", _ticket_string );
+              return ERROR( CAT_TICKET_INVALID, "ticket string cannot be a number" );
+          }
 
-        status = splitPathByKey( _arg4,
-                                 logicalParentDirName, MAX_NAME_LEN, logicalEndName, MAX_NAME_LEN, '/' );
-        if ( strlen( logicalParentDirName ) == 0 ) {
-            snprintf( logicalParentDirName, sizeof( logicalParentDirName ), "%s", PATH_SEPARATOR );
-            snprintf( logicalEndName, sizeof( logicalEndName ), "%s", _arg4 + 1 );
-        }
-        status2 = cmlCheckDataObjOnly( logicalParentDirName, logicalEndName,
-                                       _ctx.comm()->clientUser.userName,
-                                       _ctx.comm()->clientUser.rodsZone,
-                                       ACCESS_OWN, &icss );
-        if ( status2 > 0 ) {
-            snprintf( objTypeStr, sizeof( objTypeStr ), "%s", TICKET_TYPE_DATA );
-            objId = status2;
-        }
-        else {
-            status3 = cmlCheckDir( _arg4,   _ctx.comm()->clientUser.userName,
-                                   _ctx.comm()->clientUser.rodsZone,
-                                   ACCESS_OWN, &icss );
-            if ( status3 == CAT_NO_ROWS_FOUND && status2 == CAT_NO_ROWS_FOUND ) {
-                return ERROR( CAT_UNKNOWN_COLLECTION, _arg4 );
-            }
-            if ( status3 < 0 ) {
-                return ERROR( status3, "cmlCheckDir failed" );
-            }
-            snprintf( objTypeStr, sizeof( objTypeStr ), "%s", TICKET_TYPE_COLL );
-            objId = status3;
-        }
+          status = splitPathByKey( _arg4,
+                                   logicalParentDirName, MAX_NAME_LEN, logicalEndName, MAX_NAME_LEN, '/' );
+          if ( strlen( logicalParentDirName ) == 0 ) {
+              snprintf( logicalParentDirName, sizeof( logicalParentDirName ), "%s", PATH_SEPARATOR );
+              snprintf( logicalEndName, sizeof( logicalEndName ), "%s", _arg4 + 1 );
+          }
+          status2 = cmlCheckDataObjOnly( logicalParentDirName, logicalEndName,
+                                         _ctx.comm()->clientUser.userName,
+                                         _ctx.comm()->clientUser.rodsZone,
+                                         ACCESS_OWN, &icss );
+          if ( status2 > 0 ) {
+              snprintf( objTypeStr, sizeof( objTypeStr ), "%s", TICKET_TYPE_DATA );
+              objId = status2;
+          }
+          else {
+              status3 = cmlCheckDir( _arg4,   _ctx.comm()->clientUser.userName,
+                                     _ctx.comm()->clientUser.rodsZone,
+                                     ACCESS_OWN, &icss );
+              if ( status3 == CAT_NO_ROWS_FOUND && status2 == CAT_NO_ROWS_FOUND ) {
+                  return ERROR( CAT_UNKNOWN_COLLECTION, _arg4 );
+              }
+              if ( status3 < 0 ) {
+                  return ERROR( status3, "cmlCheckDir failed" );
+              }
+              snprintf( objTypeStr, sizeof( objTypeStr ), "%s", TICKET_TYPE_COLL );
+              objId = status3;
+          }
 
-        if ( logSQL != 0 ) {
-            rodsLog( LOG_SQL, "chlModTicket SQL 1" );
-        }
-        {
-            std::vector<std::string> bindVars;
-            bindVars.push_back( _ctx.comm()->clientUser.userName );
-            bindVars.push_back( _ctx.comm()->clientUser.rodsZone );
-            status = cmlGetIntegerValueFromSql(
-                         "select user_id from R_USER_MAIN where user_name=? and zone_name=?",
-                         &userId, bindVars, &icss );
-        }
-        if ( status != 0 ) {
-            return ERROR( CAT_INVALID_USER, "select user_id failed" );
-        }
+          if ( logSQL != 0 ) {
+              rodsLog( LOG_SQL, "chlModTicket SQL 1" );
+          }
+          {
+              std::vector<std::string> bindVars;
+              bindVars.push_back( _ctx.comm()->clientUser.userName );
+              bindVars.push_back( _ctx.comm()->clientUser.rodsZone );
+              status = cmlGetIntegerValueFromSql(
+                           "select user_id from R_USER_MAIN where user_name=? and zone_name=?",
+                           &userId, bindVars, &icss );
+          }
+          if ( status != 0 ) {
+              return ERROR( CAT_INVALID_USER, "select user_id failed" );
+          }
 
-        seqNum = cmlGetNextSeqVal( &icss );
-        if ( seqNum < 0 ) {
-            rodsLog( LOG_NOTICE, "chlModTicket failure %ld",
-                     seqNum );
-            return ERROR( seqNum, "cmlGetNextSeqVal failed" );
-        }
-        snprintf( seqNumStr, NAME_LEN, "%lld", seqNum );
-        snprintf( objIdStr, NAME_LEN, "%lld", objId );
-        snprintf( userIdStr, NAME_LEN, "%lld", userId );
-        if ( strncmp( _arg3, "write", 5 ) == 0 ) {
-            snprintf( ticketType, sizeof( ticketType ), "%s", "write" );
-        }
-        else {
-            snprintf( ticketType, sizeof( ticketType ), "%s", "read" );
-        }
-        getNowStr( myTime );
-        i = 0;
-        cllBindVars[i++] = seqNumStr;
-        cllBindVars[i++] = _ticket_string;
-        cllBindVars[i++] = ticketType;
-        cllBindVars[i++] = userIdStr;
-        cllBindVars[i++] = objIdStr;
-        cllBindVars[i++] = objTypeStr;
-        cllBindVars[i++] = myTime;
-        cllBindVars[i++] = myTime;
-        cllBindVarCount = i;
-        if ( logSQL != 0 ) {
-            rodsLog( LOG_SQL, "chlModTicket SQL 2" );
-        }
-        status =  cmlExecuteNoAnswerSql(
-                      "insert into R_TICKET_MAIN (ticket_id, ticket_string, ticket_type, user_id, object_id, object_type, modify_ts, create_ts) values (?, ?, ?, ?, ?, ?, ?, ?)",
-                      &icss );
+          seqNum = cmlGetNextSeqVal( &icss );
+          if ( seqNum < 0 ) {
+              rodsLog( LOG_NOTICE, "chlModTicket failure %ld",
+                       seqNum );
+              return ERROR( seqNum, "cmlGetNextSeqVal failed" );
+          }
+          snprintf( seqNumStr, NAME_LEN, "%lld", seqNum );
+          snprintf( objIdStr, NAME_LEN, "%lld", objId );
+          snprintf( userIdStr, NAME_LEN, "%lld", userId );
+          if ( strncmp( _arg3, "write", 5 ) == 0 ) {
+              snprintf( ticketType, sizeof( ticketType ), "%s", "write" );
+          }
+          else {
+              snprintf( ticketType, sizeof( ticketType ), "%s", "read" );
+          }
+          getNowStr( myTime );
+          i = 0;
+          cllBindVars[i++] = seqNumStr;
+          cllBindVars[i++] = _ticket_string;
+          cllBindVars[i++] = ticketType;
+          cllBindVars[i++] = userIdStr;
+          cllBindVars[i++] = objIdStr;
+          cllBindVars[i++] = objTypeStr;
+          cllBindVars[i++] = myTime;
+          cllBindVars[i++] = myTime;
+          cllBindVarCount = i;
+          if ( logSQL != 0 ) {
+              rodsLog( LOG_SQL, "chlModTicket SQL 2" );
+          }
+          status =  cmlExecuteNoAnswerSql(
+                        "insert into R_TICKET_MAIN (ticket_id, ticket_string, ticket_type, user_id, object_id, object_type, modify_ts, create_ts) values (?, ?, ?, ?, ?, ?, ?, ?)",
+                        &icss );
 
-        if ( status != 0 ) {
-            rodsLog( LOG_NOTICE,
-                     "chlModTicket cmlExecuteNoAnswerSql insert failure %d",
-                     status );
-            return ERROR( status, "insert failure" );
-        }
-        status =  cmlExecuteNoAnswerSql( "commit", &icss );
-        if ( status < 0 ) {
-            return ERROR( status, "commit failed" );
-        }
-        else {
-            return SUCCESS();
-        }
-    }
+          if ( status != 0 ) {
+              rodsLog( LOG_NOTICE,
+                       "chlModTicket cmlExecuteNoAnswerSql insert failure %d",
+                       status );
+              return ERROR( status, "insert failure" );
+          }
 
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlModTicket SQL 3" );
-    }
-    {
-        std::vector<std::string> bindVars;
-        bindVars.push_back( _ctx.comm()->clientUser.userName );
-        bindVars.push_back( _ctx.comm()->clientUser.rodsZone );
-        status = cmlGetIntegerValueFromSql(
-                     "select user_id from R_USER_MAIN where user_name=? and zone_name=?",
-                     &userId, bindVars, &icss );
-    }
-    if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ||
-            status == CAT_NO_ROWS_FOUND ) {
-        if ( !addRErrorMsg( &_ctx.comm()->rError, 0, "Invalid user" ) ) {
-        }
-        return ERROR( CAT_INVALID_USER, _ctx.comm()->clientUser.userName );
-    }
-    if ( status < 0 ) {
-        return ERROR( status, "failed to select user_id" );
-    }
-    snprintf( userIdStr, sizeof userIdStr, "%lld", userId );
+          return SUCCESS();
 
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlModTicket SQL 4" );
-    }
-    {
-        std::vector<std::string> bindVars;
-        bindVars.push_back( userIdStr );
-        bindVars.push_back( _ticket_string );
-        status = cmlGetIntegerValueFromSql(
-                     "select ticket_id from R_TICKET_MAIN where user_id=? and ticket_string=?",
-                     &ticketId, bindVars, &icss );
-    }
-    if ( status != 0 ) {
-        if ( logSQL != 0 ) {
-            rodsLog( LOG_SQL, "chlModTicket SQL 5" );
-        }
-        {
-            std::vector<std::string> bindVars;
-            bindVars.push_back( userIdStr );
-            bindVars.push_back( _ticket_string );
-            status = cmlGetIntegerValueFromSql(
-                         "select ticket_id from R_TICKET_MAIN where user_id=? and ticket_id=?",
-                         &ticketId, bindVars, &icss );
-        }
-        if ( status != 0 ) {
-            return ERROR( CAT_TICKET_INVALID, _ticket_string );
-        }
-    }
-    snprintf( ticketIdStr, NAME_LEN, "%lld", ticketId );
+      }
 
-    /* delete */
-    if ( strcmp( _op_name, "delete" ) == 0 ) {
-        i = 0;
-        cllBindVars[i++] = ticketIdStr;
-        cllBindVars[i++] = userIdStr;
-        cllBindVarCount = i;
-        if ( logSQL != 0 ) {
-            rodsLog( LOG_SQL, "chlModTicket SQL 6" );
-        }
-        status =  cmlExecuteNoAnswerSql(
-                      "delete from R_TICKET_MAIN where ticket_id = ? and user_id = ?",
-                      &icss );
-        if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-            return CODE( status );
-        }
-        if ( status != 0 ) {
-            rodsLog( LOG_NOTICE,
-                     "chlModTicket cmlExecuteNoAnswerSql delete failure %d",
-                     status );
-            return ERROR( status, "delete failure" );
-        }
+      if ( logSQL != 0 ) {
+          rodsLog( LOG_SQL, "chlModTicket SQL 3" );
+      }
+      {
+          std::vector<std::string> bindVars;
+          bindVars.push_back( _ctx.comm()->clientUser.userName );
+          bindVars.push_back( _ctx.comm()->clientUser.rodsZone );
+          status = cmlGetIntegerValueFromSql(
+                       "select user_id from R_USER_MAIN where user_name=? and zone_name=?",
+                       &userId, bindVars, &icss );
+      }
+      if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ||
+              status == CAT_NO_ROWS_FOUND ) {
+          if ( !addRErrorMsg( &_ctx.comm()->rError, 0, "Invalid user" ) ) {
+          }
+          return ERROR( CAT_INVALID_USER, _ctx.comm()->clientUser.userName );
+      }
+      if ( status < 0 ) {
+          return ERROR( status, "failed to select user_id" );
+      }
+      snprintf( userIdStr, sizeof userIdStr, "%lld", userId );
 
-        i = 0;
-        cllBindVars[i++] = ticketIdStr;
-        cllBindVarCount = i;
-        status =  cmlExecuteNoAnswerSql(
-                      "delete from R_TICKET_ALLOWED_HOSTS where ticket_id = ?",
-                      &icss );
-        if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-            rodsLog( LOG_NOTICE,
-                     "chlModTicket cmlExecuteNoAnswerSql delete 2 failure %d",
-                     status );
-        }
+      if ( logSQL != 0 ) {
+          rodsLog( LOG_SQL, "chlModTicket SQL 4" );
+      }
+      {
+          std::vector<std::string> bindVars;
+          bindVars.push_back( userIdStr );
+          bindVars.push_back( _ticket_string );
+          status = cmlGetIntegerValueFromSql(
+                       "select ticket_id from R_TICKET_MAIN where user_id=? and ticket_string=?",
+                       &ticketId, bindVars, &icss );
+      }
+      if ( status != 0 ) {
+          if ( logSQL != 0 ) {
+              rodsLog( LOG_SQL, "chlModTicket SQL 5" );
+          }
+          {
+              std::vector<std::string> bindVars;
+              bindVars.push_back( userIdStr );
+              bindVars.push_back( _ticket_string );
+              status = cmlGetIntegerValueFromSql(
+                           "select ticket_id from R_TICKET_MAIN where user_id=? and ticket_id=?",
+                           &ticketId, bindVars, &icss );
+          }
+          if ( status != 0 ) {
+              return ERROR( CAT_TICKET_INVALID, _ticket_string );
+          }
+      }
+      snprintf( ticketIdStr, NAME_LEN, "%lld", ticketId );
 
-        i = 0;
-        cllBindVars[i++] = ticketIdStr;
-        cllBindVarCount = i;
-        status =  cmlExecuteNoAnswerSql(
-                      "delete from R_TICKET_ALLOWED_USERS where ticket_id = ?",
-                      &icss );
-        if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-            rodsLog( LOG_NOTICE,
-                     "chlModTicket cmlExecuteNoAnswerSql delete 3 failure %d",
-                     status );
-        }
+      /* delete */
+      if ( strcmp( _op_name, "delete" ) == 0 ) {
+          i = 0;
+          cllBindVars[i++] = ticketIdStr;
+          cllBindVars[i++] = userIdStr;
+          cllBindVarCount = i;
+          if ( logSQL != 0 ) {
+              rodsLog( LOG_SQL, "chlModTicket SQL 6" );
+          }
+          status =  cmlExecuteNoAnswerSql(
+                        "delete from R_TICKET_MAIN where ticket_id = ? and user_id = ?",
+                        &icss );
+          if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+              return CODE( status );
+          }
+          if ( status != 0 ) {
+              rodsLog( LOG_NOTICE,
+                       "chlModTicket cmlExecuteNoAnswerSql delete failure %d",
+                       status );
+              return ERROR( status, "delete failure" );
+          }
 
-        i = 0;
-        cllBindVars[i++] = ticketIdStr;
-        cllBindVarCount = i;
-        status =  cmlExecuteNoAnswerSql(
-                      "delete from R_TICKET_ALLOWED_GROUPS where ticket_id = ?",
-                      &icss );
-        if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-            rodsLog( LOG_NOTICE,
-                     "chlModTicket cmlExecuteNoAnswerSql delete 4 failure %d",
-                     status );
-        }
-        status =  cmlExecuteNoAnswerSql( "commit", &icss );
-        if ( status < 0 ) {
-            return ERROR( status, "commit failed" );
-        }
-        else {
-            return SUCCESS();
-        }
-    }
+          i = 0;
+          cllBindVars[i++] = ticketIdStr;
+          cllBindVarCount = i;
+          status =  cmlExecuteNoAnswerSql(
+                        "delete from R_TICKET_ALLOWED_HOSTS where ticket_id = ?",
+                        &icss );
+          if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+              rodsLog( LOG_NOTICE,
+                       "chlModTicket cmlExecuteNoAnswerSql delete 2 failure %d",
+                       status );
+          }
 
-    /* mod */
-    if ( strcmp( _op_name, "mod" ) == 0 ) {
-        if ( strcmp( _arg3, "uses" ) == 0 ) {
-            i = 0;
-            cllBindVars[i++] = _arg4;
-            cllBindVars[i++] = ticketIdStr;
-            cllBindVars[i++] = userIdStr;
-            cllBindVarCount = i;
-            if ( logSQL != 0 ) {
-                rodsLog( LOG_SQL, "chlModTicket SQL 7" );
-            }
-            status =  cmlExecuteNoAnswerSql(
-                          "update R_TICKET_MAIN set uses_limit=? where ticket_id = ? and user_id = ?",
-                          &icss );
-            if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-                return CODE( status );
-            }
-            if ( status != 0 ) {
-                rodsLog( LOG_NOTICE,
-                         "chlModTicket cmlExecuteNoAnswerSql update failure %d",
-                         status );
-                return ERROR( status, "update failure" );
-            }
-            status =  cmlExecuteNoAnswerSql( "commit", &icss );
-            if ( status < 0 ) {
-                return ERROR( status, "commit failed" );
-            }
-            else {
-                return SUCCESS();
-            }
-        }
+          i = 0;
+          cllBindVars[i++] = ticketIdStr;
+          cllBindVarCount = i;
+          status =  cmlExecuteNoAnswerSql(
+                        "delete from R_TICKET_ALLOWED_USERS where ticket_id = ?",
+                        &icss );
+          if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+              rodsLog( LOG_NOTICE,
+                       "chlModTicket cmlExecuteNoAnswerSql delete 3 failure %d",
+                       status );
+          }
 
-        if ( strncmp( _arg3, "write", 5 ) == 0 ) {
-            if ( strstr( _arg3, "file" ) != NULL ) {
-                i = 0;
-                cllBindVars[i++] = _arg4;
-                cllBindVars[i++] = ticketIdStr;
-                cllBindVars[i++] = userIdStr;
-                cllBindVarCount = i;
-                if ( logSQL != 0 ) {
-                    rodsLog( LOG_SQL, "chlModTicket SQL 8" );
-                }
-                status =  cmlExecuteNoAnswerSql(
-                              "update R_TICKET_MAIN set write_file_limit=? where ticket_id = ? and user_id = ?",
-                              &icss );
-                if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-                    return CODE( status );
-                }
-                if ( status != 0 ) {
-                    rodsLog( LOG_NOTICE,
-                             "chlModTicket cmlExecuteNoAnswerSql update failure %d",
-                             status );
-                    return ERROR( status, "update failure" );
-                }
-                status =  cmlExecuteNoAnswerSql( "commit", &icss );
-                if ( status < 0 ) {
-                    return ERROR( status, "commit failed" );
-                }
-                else {
-                    return SUCCESS();
-                }
-            }
-            if ( strstr( _arg3, "byte" ) != NULL ) {
-                i = 0;
-                cllBindVars[i++] = _arg4;
-                cllBindVars[i++] = ticketIdStr;
-                cllBindVars[i++] = userIdStr;
-                cllBindVarCount = i;
-                if ( logSQL != 0 ) {
-                    rodsLog( LOG_SQL, "chlModTicket SQL 9" );
-                }
-                status =  cmlExecuteNoAnswerSql(
-                              "update R_TICKET_MAIN set write_byte_limit=? where ticket_id = ? and user_id = ?",
-                              &icss );
-                if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-                    return CODE( status );
-                }
-                if ( status != 0 ) {
-                    rodsLog( LOG_NOTICE,
-                             "chlModTicket cmlExecuteNoAnswerSql update failure %d",
-                             status );
-                    return ERROR( status, "update failure" );
-                }
-                status =  cmlExecuteNoAnswerSql( "commit", &icss );
-                if ( status < 0 ) {
-                    return ERROR( status, "commit failed" );
-                }
-                else {
-                    return SUCCESS();
-                }
-            }
-        }
+          i = 0;
+          cllBindVars[i++] = ticketIdStr;
+          cllBindVarCount = i;
+          status =  cmlExecuteNoAnswerSql(
+                        "delete from R_TICKET_ALLOWED_GROUPS where ticket_id = ?",
+                        &icss );
+          if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+              rodsLog( LOG_NOTICE,
+                       "chlModTicket cmlExecuteNoAnswerSql delete 4 failure %d",
+                       status );
+          }
 
-        if ( strncmp( _arg3, "expir", 5 ) == 0 ) {
-            status = checkDateFormat( (char*)_arg4 );
-            if ( status != 0 ) {
-                return ERROR( status, "date format incorrect" );
-            }
-            i = 0;
-            cllBindVars[i++] = _arg4;
-            cllBindVars[i++] = ticketIdStr;
-            cllBindVars[i++] = userIdStr;
-            cllBindVarCount = i;
-            if ( logSQL != 0 ) {
-                rodsLog( LOG_SQL, "chlModTicket SQL 10" );
-            }
-            status =  cmlExecuteNoAnswerSql(
-                          "update R_TICKET_MAIN set ticket_expiry_ts=? where ticket_id = ? and user_id = ?",
-                          &icss );
-            if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-                return CODE( status );
-            }
-            if ( status != 0 ) {
-                rodsLog( LOG_NOTICE,
-                         "chlModTicket cmlExecuteNoAnswerSql update failure %d",
-                         status );
-                return ERROR( status, "update failure" );
-            }
-            status =  cmlExecuteNoAnswerSql( "commit", &icss );
-            if ( status < 0 ) {
-                return ERROR( status, "commit failed" );
-            }
-            else {
-                return SUCCESS();
-            }
-        }
+          return SUCCESS();
+      }
 
-        if ( strcmp( _arg3, "add" ) == 0 ) {
-            if ( strcmp( _arg4, "host" ) == 0 ) {
-                char *hostIp;
-                hostIp = convertHostToIp( _arg5 );
-                if ( hostIp == NULL ) {
-                    return ERROR( CAT_HOSTNAME_INVALID, _arg5 );
-                }
-                i = 0;
-                cllBindVars[i++] = ticketIdStr;
-                cllBindVars[i++] = hostIp;
-                cllBindVarCount = i;
-                if ( logSQL != 0 ) {
-                    rodsLog( LOG_SQL, "chlModTicket SQL 11" );
-                }
-                status =  cmlExecuteNoAnswerSql(
-                              "insert into R_TICKET_ALLOWED_HOSTS (ticket_id, host) values (? , ?)",
-                              &icss );
-                if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-                    return CODE( status );
-                }
-                if ( status != 0 ) {
-                    rodsLog( LOG_NOTICE,
-                             "chlModTicket cmlExecuteNoAnswerSql insert host failure %d",
-                             status );
-                    return ERROR( status, "insert host failure" );
-                }
-                status =  cmlExecuteNoAnswerSql( "commit", &icss );
-                if ( status < 0 ) {
-                    return ERROR( status, "commit failed" );
-                }
-                else {
-                    return SUCCESS();
-                }
-            }
-            if ( strcmp( _arg4, "user" ) == 0 ) {
-                status = icatGetTicketUserId( _ctx.prop_map(), _arg5, user2IdStr );
-                if ( status != 0 ) {
-                    return ERROR( status, "icatGetTicketUserId failed" );
-                }
-                i = 0;
-                cllBindVars[i++] = ticketIdStr;
-                cllBindVars[i++] = _arg5;
-                cllBindVarCount = i;
-                if ( logSQL != 0 ) {
-                    rodsLog( LOG_SQL, "chlModTicket SQL 12" );
-                }
-                status =  cmlExecuteNoAnswerSql(
-                              "insert into R_TICKET_ALLOWED_USERS (ticket_id, user_name) values (? , ?)",
-                              &icss );
-                if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-                    return CODE( status );
-                }
-                if ( status != 0 ) {
-                    rodsLog( LOG_NOTICE,
-                             "chlModTicket cmlExecuteNoAnswerSql insert user failure %d",
-                             status );
-                    return ERROR( status, "insert user failure" );
-                }
-                status =  cmlExecuteNoAnswerSql( "commit", &icss );
-                if ( status < 0 ) {
-                    return ERROR( status, "commit failed" );
-                }
-                else {
-                    return SUCCESS();
-                }
-            }
-            if ( strcmp( _arg4, "group" ) == 0 ) {
-                status = icatGetTicketGroupId( _ctx.prop_map(), _arg5, user2IdStr );
-                if ( status != 0 ) {
-                    return ERROR( status, "icatGetTicketGroupId failed" );
-                }
-                i = 0;
-                cllBindVars[i++] = ticketIdStr;
-                cllBindVars[i++] = _arg5;
-                cllBindVarCount = i;
-                if ( logSQL != 0 ) {
-                    rodsLog( LOG_SQL, "chlModTicket SQL 13" );
-                }
-                status =  cmlExecuteNoAnswerSql(
-                              "insert into R_TICKET_ALLOWED_GROUPS (ticket_id, group_name) values (? , ?)",
-                              &icss );
-                if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-                    return CODE( status );
-                }
-                if ( status != 0 ) {
-                    rodsLog( LOG_NOTICE,
-                             "chlModTicket cmlExecuteNoAnswerSql insert user failure %d",
-                             status );
-                    return ERROR( status, "insert failed" );
-                }
-                status =  cmlExecuteNoAnswerSql( "commit", &icss );
-                if ( status < 0 ) {
-                    return ERROR( status, "commit failed" );
-                }
-                else {
-                    return SUCCESS();
-                }
-            }
-        }
-        if ( strcmp( _arg3, "remove" ) == 0 ) {
-            if ( strcmp( _arg4, "host" ) == 0 ) {
-                char *hostIp;
-                hostIp = convertHostToIp( _arg5 );
-                if ( hostIp == NULL ) {
-                    return ERROR( CAT_HOSTNAME_INVALID, "host name null" );
-                }
-                i = 0;
-                cllBindVars[i++] = ticketIdStr;
-                cllBindVars[i++] = hostIp;
-                cllBindVarCount = i;
-                if ( logSQL != 0 ) {
-                    rodsLog( LOG_SQL, "chlModTicket SQL 14" );
-                }
-                status =  cmlExecuteNoAnswerSql(
-                              "delete from R_TICKET_ALLOWED_HOSTS where ticket_id=? and host=?",
-                              &icss );
-                if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-                    return CODE( status );
-                }
-                if ( status != 0 ) {
-                    rodsLog( LOG_NOTICE,
-                             "chlModTicket cmlExecuteNoAnswerSql delete host failure %d",
-                             status );
-                    return ERROR( status, "delete failed" );
-                }
-                status =  cmlExecuteNoAnswerSql( "commit", &icss );
-                if ( status < 0 ) {
-                    return ERROR( status, "commit failed" );
-                }
-                else {
-                    return SUCCESS();
-                }
+      /* mod */
+      if ( strcmp( _op_name, "mod" ) == 0 ) {
+          if ( strcmp( _arg3, "uses" ) == 0 ) {
+              i = 0;
+              cllBindVars[i++] = _arg4;
+              cllBindVars[i++] = ticketIdStr;
+              cllBindVars[i++] = userIdStr;
+              cllBindVarCount = i;
+              if ( logSQL != 0 ) {
+                  rodsLog( LOG_SQL, "chlModTicket SQL 7" );
+              }
+              status =  cmlExecuteNoAnswerSql(
+                            "update R_TICKET_MAIN set uses_limit=? where ticket_id = ? and user_id = ?",
+                            &icss );
+              if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                  return CODE( status );
+              }
+              if ( status != 0 ) {
+                  rodsLog( LOG_NOTICE,
+                           "chlModTicket cmlExecuteNoAnswerSql update failure %d",
+                           status );
+                  return ERROR( status, "update failure" );
+              }
 
-            }
-            if ( strcmp( _arg4, "user" ) == 0 ) {
-                status = icatGetTicketUserId( _ctx.prop_map(), _arg5, user2IdStr );
-                if ( status != 0 ) {
-                    return ERROR( status, "icatGetTicketUserId failed" );
-                }
-                i = 0;
-                cllBindVars[i++] = ticketIdStr;
-                cllBindVars[i++] = _arg5;
-                cllBindVarCount = i;
-                if ( logSQL != 0 ) {
-                    rodsLog( LOG_SQL, "chlModTicket SQL 15" );
-                }
-                status =  cmlExecuteNoAnswerSql(
-                              "delete from R_TICKET_ALLOWED_USERS where ticket_id=? and user_name=?",
-                              &icss );
-                if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-                    return CODE( status );
-                }
-                if ( status != 0 ) {
-                    rodsLog( LOG_NOTICE,
-                             "chlModTicket cmlExecuteNoAnswerSql delete user failure %d",
-                             status );
-                    return ERROR( status, "delete failed" );
-                }
-                status =  cmlExecuteNoAnswerSql( "commit", &icss );
-                if ( status < 0 ) {
-                    return ERROR( status, "commit failed" );
-                }
-                else {
-                    return SUCCESS();
-                }
-            }
-            if ( strcmp( _arg4, "group" ) == 0 ) {
-                status = icatGetTicketGroupId( _ctx.prop_map(), _arg5, group2IdStr );
-                if ( status != 0 ) {
-                    return ERROR( status, "icatGetTicketGroupId failed" );
-                }
-                i = 0;
-                cllBindVars[i++] = ticketIdStr;
-                cllBindVars[i++] = _arg5;
-                cllBindVarCount = i;
-                if ( logSQL != 0 ) {
-                    rodsLog( LOG_SQL, "chlModTicket SQL 16" );
-                }
-                status =  cmlExecuteNoAnswerSql(
-                              "delete from R_TICKET_ALLOWED_GROUPS where ticket_id=? and group_name=?",
-                              &icss );
-                if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-                    return CODE( status );
-                }
-                if ( status != 0 ) {
-                    rodsLog( LOG_NOTICE,
-                             "chlModTicket cmlExecuteNoAnswerSql delete group failure %d",
-                             status );
-                    return ERROR( status, "delete group failed" );
-                }
-                status =  cmlExecuteNoAnswerSql( "commit", &icss );
-                if ( status < 0 ) {
-                    return ERROR( status, "commit failed" );
-                }
-                else {
-                    return SUCCESS();
-                }
-            }
-        }
-    }
+              return SUCCESS();
+          }
 
-    return ERROR( CAT_INVALID_ARGUMENT, "invalid op name" );
+          if ( strncmp( _arg3, "write", 5 ) == 0 ) {
+              if ( strstr( _arg3, "file" ) != NULL ) {
+                  i = 0;
+                  cllBindVars[i++] = _arg4;
+                  cllBindVars[i++] = ticketIdStr;
+                  cllBindVars[i++] = userIdStr;
+                  cllBindVarCount = i;
+                  if ( logSQL != 0 ) {
+                      rodsLog( LOG_SQL, "chlModTicket SQL 8" );
+                  }
+                  status =  cmlExecuteNoAnswerSql(
+                                "update R_TICKET_MAIN set write_file_limit=? where ticket_id = ? and user_id = ?",
+                                &icss );
+                  if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                      return CODE( status );
+                  }
+                  if ( status != 0 ) {
+                      rodsLog( LOG_NOTICE,
+                               "chlModTicket cmlExecuteNoAnswerSql update failure %d",
+                               status );
+                      return ERROR( status, "update failure" );
+                  }
+                  return SUCCESS();
+              }
+              if ( strstr( _arg3, "byte" ) != NULL ) {
+                  i = 0;
+                  cllBindVars[i++] = _arg4;
+                  cllBindVars[i++] = ticketIdStr;
+                  cllBindVars[i++] = userIdStr;
+                  cllBindVarCount = i;
+                  if ( logSQL != 0 ) {
+                      rodsLog( LOG_SQL, "chlModTicket SQL 9" );
+                  }
+                  status =  cmlExecuteNoAnswerSql(
+                                "update R_TICKET_MAIN set write_byte_limit=? where ticket_id = ? and user_id = ?",
+                                &icss );
+                  if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                      return CODE( status );
+                  }
+                  if ( status != 0 ) {
+                      rodsLog( LOG_NOTICE,
+                               "chlModTicket cmlExecuteNoAnswerSql update failure %d",
+                               status );
+                      return ERROR( status, "update failure" );
+                  }
+                  return SUCCESS();
+              }
+          }
+
+          if ( strncmp( _arg3, "expir", 5 ) == 0 ) {
+              status = checkDateFormat( (char*)_arg4 );
+              if ( status != 0 ) {
+                  return ERROR( status, "date format incorrect" );
+              }
+              i = 0;
+              cllBindVars[i++] = _arg4;
+              cllBindVars[i++] = ticketIdStr;
+              cllBindVars[i++] = userIdStr;
+              cllBindVarCount = i;
+              if ( logSQL != 0 ) {
+                  rodsLog( LOG_SQL, "chlModTicket SQL 10" );
+              }
+              status =  cmlExecuteNoAnswerSql(
+                            "update R_TICKET_MAIN set ticket_expiry_ts=? where ticket_id = ? and user_id = ?",
+                            &icss );
+              if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                  return CODE( status );
+              }
+              if ( status != 0 ) {
+                  rodsLog( LOG_NOTICE,
+                           "chlModTicket cmlExecuteNoAnswerSql update failure %d",
+                           status );
+                  return ERROR( status, "update failure" );
+              }
+              return SUCCESS();
+          }
+
+          if ( strcmp( _arg3, "add" ) == 0 ) {
+              if ( strcmp( _arg4, "host" ) == 0 ) {
+                  char *hostIp;
+                  hostIp = convertHostToIp( _arg5 );
+                  if ( hostIp == NULL ) {
+                      return ERROR( CAT_HOSTNAME_INVALID, _arg5 );
+                  }
+                  i = 0;
+                  cllBindVars[i++] = ticketIdStr;
+                  cllBindVars[i++] = hostIp;
+                  cllBindVarCount = i;
+                  if ( logSQL != 0 ) {
+                      rodsLog( LOG_SQL, "chlModTicket SQL 11" );
+                  }
+                  status =  cmlExecuteNoAnswerSql(
+                                "insert into R_TICKET_ALLOWED_HOSTS (ticket_id, host) values (? , ?)",
+                                &icss );
+                  if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                      return CODE( status );
+                  }
+                  if ( status != 0 ) {
+                      rodsLog( LOG_NOTICE,
+                               "chlModTicket cmlExecuteNoAnswerSql insert host failure %d",
+                               status );
+                      return ERROR( status, "insert host failure" );
+                  }
+                  return SUCCESS();
+              }
+              if ( strcmp( _arg4, "user" ) == 0 ) {
+                  status = icatGetTicketUserId( _ctx.prop_map(), _arg5, user2IdStr );
+                  if ( status != 0 ) {
+                      return ERROR( status, "icatGetTicketUserId failed" );
+                  }
+                  i = 0;
+                  cllBindVars[i++] = ticketIdStr;
+                  cllBindVars[i++] = _arg5;
+                  cllBindVarCount = i;
+                  if ( logSQL != 0 ) {
+                      rodsLog( LOG_SQL, "chlModTicket SQL 12" );
+                  }
+                  status =  cmlExecuteNoAnswerSql(
+                                "insert into R_TICKET_ALLOWED_USERS (ticket_id, user_name) values (? , ?)",
+                                &icss );
+                  if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                      return CODE( status );
+                  }
+                  if ( status != 0 ) {
+                      rodsLog( LOG_NOTICE,
+                               "chlModTicket cmlExecuteNoAnswerSql insert user failure %d",
+                               status );
+                      return ERROR( status, "insert user failure" );
+                  }
+                  return SUCCESS();
+              }
+              if ( strcmp( _arg4, "group" ) == 0 ) {
+                  status = icatGetTicketGroupId( _ctx.prop_map(), _arg5, user2IdStr );
+                  if ( status != 0 ) {
+                      return ERROR( status, "icatGetTicketGroupId failed" );
+                  }
+                  i = 0;
+                  cllBindVars[i++] = ticketIdStr;
+                  cllBindVars[i++] = _arg5;
+                  cllBindVarCount = i;
+                  if ( logSQL != 0 ) {
+                      rodsLog( LOG_SQL, "chlModTicket SQL 13" );
+                  }
+                  status =  cmlExecuteNoAnswerSql(
+                                "insert into R_TICKET_ALLOWED_GROUPS (ticket_id, group_name) values (? , ?)",
+                                &icss );
+                  if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                      return CODE( status );
+                  }
+                  if ( status != 0 ) {
+                      rodsLog( LOG_NOTICE,
+                               "chlModTicket cmlExecuteNoAnswerSql insert user failure %d",
+                               status );
+                      return ERROR( status, "insert failed" );
+                  }
+                  return SUCCESS();
+              }
+          }
+          if ( strcmp( _arg3, "remove" ) == 0 ) {
+              if ( strcmp( _arg4, "host" ) == 0 ) {
+                  char *hostIp;
+                  hostIp = convertHostToIp( _arg5 );
+                  if ( hostIp == NULL ) {
+                      return ERROR( CAT_HOSTNAME_INVALID, "host name null" );
+                  }
+                  i = 0;
+                  cllBindVars[i++] = ticketIdStr;
+                  cllBindVars[i++] = hostIp;
+                  cllBindVarCount = i;
+                  if ( logSQL != 0 ) {
+                      rodsLog( LOG_SQL, "chlModTicket SQL 14" );
+                  }
+                  status =  cmlExecuteNoAnswerSql(
+                                "delete from R_TICKET_ALLOWED_HOSTS where ticket_id=? and host=?",
+                                &icss );
+                  if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                      return CODE( status );
+                  }
+                  if ( status != 0 ) {
+                      rodsLog( LOG_NOTICE,
+                               "chlModTicket cmlExecuteNoAnswerSql delete host failure %d",
+                               status );
+                      return ERROR( status, "delete failed" );
+                  }
+                  return SUCCESS();
+
+              }
+              if ( strcmp( _arg4, "user" ) == 0 ) {
+                  status = icatGetTicketUserId( _ctx.prop_map(), _arg5, user2IdStr );
+                  if ( status != 0 ) {
+                      return ERROR( status, "icatGetTicketUserId failed" );
+                  }
+                  i = 0;
+                  cllBindVars[i++] = ticketIdStr;
+                  cllBindVars[i++] = _arg5;
+                  cllBindVarCount = i;
+                  if ( logSQL != 0 ) {
+                      rodsLog( LOG_SQL, "chlModTicket SQL 15" );
+                  }
+                  status =  cmlExecuteNoAnswerSql(
+                                "delete from R_TICKET_ALLOWED_USERS where ticket_id=? and user_name=?",
+                                &icss );
+                  if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                      return CODE( status );
+                  }
+                  if ( status != 0 ) {
+                      rodsLog( LOG_NOTICE,
+                               "chlModTicket cmlExecuteNoAnswerSql delete user failure %d",
+                               status );
+                      return ERROR( status, "delete failed" );
+                  }
+                  return SUCCESS();
+              }
+              if ( strcmp( _arg4, "group" ) == 0 ) {
+                  status = icatGetTicketGroupId( _ctx.prop_map(), _arg5, group2IdStr );
+                  if ( status != 0 ) {
+                      return ERROR( status, "icatGetTicketGroupId failed" );
+                  }
+                  i = 0;
+                  cllBindVars[i++] = ticketIdStr;
+                  cllBindVars[i++] = _arg5;
+                  cllBindVarCount = i;
+                  if ( logSQL != 0 ) {
+                      rodsLog( LOG_SQL, "chlModTicket SQL 16" );
+                  }
+                  status =  cmlExecuteNoAnswerSql(
+                                "delete from R_TICKET_ALLOWED_GROUPS where ticket_id=? and group_name=?",
+                                &icss );
+                  if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                      return CODE( status );
+                  }
+                  if ( status != 0 ) {
+                      rodsLog( LOG_NOTICE,
+                               "chlModTicket cmlExecuteNoAnswerSql delete group failure %d",
+                               status );
+                      return ERROR( status, "delete group failed" );
+                  }
+                  return SUCCESS();
+              }
+          }
+      }
+
+      return ERROR( CAT_INVALID_ARGUMENT, "invalid op name" );
+
+    };
+    return execTx( &icss, tx );
+
+
 
 } // db_mod_ticket_op
 

@@ -191,7 +191,7 @@ int _rollback( const char *functionName ) {
     // =-=-=-=-=-=-=-
     // This type of rollback is needed for Postgres since the low-level
     // now does an automatic 'begin' to create a sql block */
-    int status =  cmlExecuteNoAnswerSql( "rollback", &icss );
+    rodsLong_t status =  cmlExecuteNoAnswerSql( "rollback", &icss );
     if ( status == 0 ) {
         rodsLog( LOG_NOTICE,
                  "%s cmlExecuteNoAnswerSql(rollback) succeeded", functionName );
@@ -220,7 +220,7 @@ irods::error getLocalZone(
     irods::error ret = _prop_map.get< std::string >( ZONE_PROP, _zone );
     if ( !ret.ok() ) {
         char local_zone[ MAX_NAME_LEN ];
-        int status;
+        rodsLong_t status;
         {
             std::vector<std::string> bindVars;
             bindVars.push_back( "local" );
@@ -279,7 +279,7 @@ int get_object_count_of_resource_by_name(
 
     std::vector<std::string> bindVars;
     bindVars.push_back( resc_id_str );
-    int status = cmlGetIntegerValueFromSql(
+    rodsLong_t status = cmlGetIntegerValueFromSql(
                      ( char* )"select count(data_id) from R_DATA_MAIN where resc_id=?",
                      &_count,
                      bindVars,
@@ -297,7 +297,7 @@ irods::error determine_user_has_modify_metadata_access(
     const std::string& _user_name,
     const std::string& _zone ) {
 
-    int status = 0;
+    rodsLong_t status = 0;
 
     rodsLog(
         LOG_DEBUG,
@@ -342,7 +342,7 @@ irods::error determine_user_has_modify_metadata_access(
     rodsLong_t access_needed = -1;
     {
         std::vector<std::string> bind_vars;
-        int status = cmlGetIntegerValueFromSql(
+        rodsLong_t status = cmlGetIntegerValueFromSql(
                          "select token_id  from R_TOKN_MAIN where token_name = 'modify metadata' and token_namespace = 'access_type'",
 			 &access_needed,
                          bind_vars,
@@ -441,7 +441,7 @@ irods::error determine_user_has_modify_metadata_access(
  */
 void removeMetaMapAndAVU( char *dataObjNumber ) {
     char tSQL[MAX_SQL_SIZE];
-    int status;
+    rodsLong_t status;
     cllBindVars[0] = dataObjNumber;
     cllBindVarCount = 1;
     if ( logSQL != 0 ) {
@@ -483,7 +483,7 @@ static int removeAVUs() {
     snprintf( tSQL, MAX_SQL_SIZE,
               "delete from R_META_MAIN where meta_id in (select meta_id from R_META_MAIN except select meta_id from R_OBJT_METAMAP)" );
 #endif
-    const int status =  cmlExecuteNoAnswerSql( tSQL, &icss );
+    const rodsLong_t status =  cmlExecuteNoAnswerSql( tSQL, &icss );
     rodsLog( LOG_DEBUG, "removeAVUs status=%d\n", status );
 
     return status;
@@ -522,7 +522,7 @@ int hostname_resolves_to_ipv4(const char* _hostname) {
 
 int
 _resolveHostName(rsComm_t* _rsComm, const char* _hostAddress) {
-    const int status = hostname_resolves_to_ipv4(_hostAddress);
+    const rodsLong_t status = hostname_resolves_to_ipv4(_hostAddress);
 
     if ( status != 0 ) {
         char errMsg[155];
@@ -547,7 +547,7 @@ irods::error _childIsValid(
     // =-=-=-=-=-=-=-
     // Lookup the child resource and make sure its parent field is empty
     char parent[MAX_NAME_LEN];
-    int status;
+    rodsLong_t status;
 
     // Get the resource name from the child string
     std::string resc_name;
@@ -612,7 +612,7 @@ irods::error _updateChildParent(
     cllBindVars[cllBindVarCount++] = _child_resc_id.c_str();
     logger.log();
 
-    int status = cmlExecuteNoAnswerSql(
+    rodsLong_t status = cmlExecuteNoAnswerSql(
                      "update R_RESC_MAIN set resc_parent=?, resc_parent_context=?, modify_ts=? "
                      "where resc_id=?",
                      &icss );
@@ -638,7 +638,7 @@ _rescHasData(
 
     logger.log();
 
-    int status = get_object_count_of_resource_by_name(
+    rodsLong_t status = get_object_count_of_resource_by_name(
                       _icss,
                       _resc_name,
                       obj_count );
@@ -671,12 +671,12 @@ irods::error validate_resource_name( std::string _resc_name ) {
 
 } // validate_resource_name
 
-bool
+std::tuple<bool, irods::error>
 _rescHasParentOrChild( char* rescId ) {
 
     char parent[MAX_NAME_LEN];
     char children[MAX_NAME_LEN];
-    int status;
+    rodsLong_t status;
     irods::sql_logger logger( "_rescHasParentOrChild", logSQL );
 
     logger.log();
@@ -695,13 +695,10 @@ _rescHasParentOrChild( char* rescId ) {
             ss << "Resource \"" << rescId << "\" not found";
             irods::log( LOG_NOTICE, ss.str() );
         }
-        else {
-            _rollback( "_rescHasParentOrChild" );
-        }
-        return false;
+        return std::make_tuple(false, CODE(status));
     }
     if ( strlen( parent ) != 0 ) {
-        return true;
+        return std::make_tuple(true, SUCCESS());
     }
     {
         std::vector<std::string> bindVars;
@@ -711,20 +708,17 @@ _rescHasParentOrChild( char* rescId ) {
                      children, MAX_NAME_LEN, bindVars, &icss );
     }
     if ( status != 0 ) {
-        if ( status != CAT_NO_ROWS_FOUND ) {
-            _rollback( "_rescHasParentOrChild" );
-        }
-        return false;
+        return std::make_tuple(false, CODE(status));
     }
     if ( strlen( children ) != 0 ) {
-        return true;
+        return std::make_tuple(true, SUCCESS());
     }
-    return false;
+    return std::make_tuple(false, SUCCESS());
 
 }
 
-bool _userInRUserAuth( const char* userName, const char* zoneName, const char* auth_name ) {
-    int status;
+std::tuple<bool, irods::error> _userInRUserAuth( const char* userName, const char* zoneName, const char* auth_name ) {
+    rodsLong_t status;
     rodsLong_t iVal;
     irods::sql_logger logger( "_userInRUserAuth", logSQL );
 
@@ -740,11 +734,11 @@ bool _userInRUserAuth( const char* userName, const char* zoneName, const char* a
     }
     if ( status != 0 ) {
         if ( status != CAT_NO_ROWS_FOUND ) {
-            _rollback( "_userInRUserAuth" );
+            return std::make_tuple(false, CODE(status));
         }
-        return false;
+        return std::make_tuple(false, SUCCESS());
     } else {
-        return true;
+        return std::make_tuple(true, SUCCESS());
     }
 }
 
@@ -889,6 +883,7 @@ static int _delColl( rsComm_t *rsComm, collInfo_t *collInfo ) {
                  "_delColl cmlExecuteNoAnswerSql delete access failure %d",
                  status );
         _rollback( "_delColl" );
+        return status;
     }
 
     /* Remove associated AVUs, if any */
@@ -903,7 +898,7 @@ static int _delColl( rsComm_t *rsComm, collInfo_t *collInfo ) {
 // gets called after a resource has been modified (iadmin modresc <oldname> name <newname>)
 static int _modRescInHierarchies( const std::string& old_resc, const std::string& new_resc ) {
     char update_sql[MAX_SQL_SIZE];
-    int status = 0;
+    rodsLong_t status = 0;
     const char *sep = irods::hierarchy_parser::delimiter().c_str();
     std::string std_conf_str;        // to store value of STANDARD_CONFORMING_STRINGS
 
@@ -1076,7 +1071,7 @@ icatScramble( char *pw ) {
   Called internally, from chlModUser.
 */
 int decodePw( rsComm_t *rsComm, const char *in, char *out ) {
-    int status;
+    rodsLong_t status;
     char *cp;
     char password[MAX_PASSWORD_LEN];
     char upassword[MAX_PASSWORD_LEN + 10];
@@ -1383,7 +1378,7 @@ findAVU( const char *attribute, const char *value, const char *units ) {
   Find existing or insert a new AVU triplet.
   Return code is error, or the AVU ID.
 */
-int
+rodsLong_t
 findOrInsertAVU( const char *attribute, const char *value, const char *units ) {
     char nextStr[MAX_NAME_LEN];
     char myTime[50];
@@ -1504,7 +1499,7 @@ int _modInheritance( int inheritFlag, int recursiveFlag, const char *collIdStr, 
   indicates how much space is left before reaching the quota.
 */
 int setOverQuota( rsComm_t *rsComm ) {
-    int status;
+    rodsLong_t status;
     int rowsFound;
     int statementNum;
     char myTime[50];
@@ -1565,7 +1560,7 @@ int setOverQuota( rsComm_t *rsComm ) {
     }
     getNowStr( myTime );
     for ( rowsFound = 0;; rowsFound++ ) {
-        int status2;
+        rodsLong_t status2;
         if ( rowsFound == 0 ) {
             status = cmlGetFirstRowFromSql( "select sum(quota_usage), R_QUOTA_MAIN.user_id from R_QUOTA_USAGE, R_QUOTA_MAIN where R_QUOTA_MAIN.user_id = R_QUOTA_USAGE.user_id and R_QUOTA_MAIN.resc_id = '0' group by R_QUOTA_MAIN.user_id",
                                             &statementNum, &icss );
@@ -1598,7 +1593,7 @@ int setOverQuota( rsComm_t *rsComm ) {
         rodsLog( LOG_SQL, "setOverQuota SQL 5" );
     }
     for ( rowsFound = 0;; rowsFound++ ) {
-        int status2;
+        rodsLong_t status2;
         if ( rowsFound == 0 ) {
             status = cmlGetFirstRowFromSql( mySQL1, &statementNum,
                                             &icss );
@@ -1654,7 +1649,7 @@ int setOverQuota( rsComm_t *rsComm ) {
     }
     getNowStr( myTime );
     for ( rowsFound = 0;; rowsFound++ ) {
-        int status2;
+        rodsLong_t status2;
         if ( rowsFound == 0 ) {
             status = cmlGetFirstRowFromSql( mySQL2b, &statementNum,
                                             &icss );
@@ -1705,7 +1700,7 @@ icatGetTicketUserId( irods::plugin_property_map& _prop_map, const char *userName
     char userZone[NAME_LEN];
     char zoneToUse[NAME_LEN];
     char userName2[NAME_LEN];
-    int status;
+    rodsLong_t status;
 
     std::string zone;
     irods::error ret = getLocalZone( _prop_map, &icss, zone );
@@ -1750,7 +1745,7 @@ icatGetTicketGroupId( irods::plugin_property_map& _prop_map, const char *groupNa
     char groupZone[NAME_LEN];
     char zoneToUse[NAME_LEN];
     char groupName2[NAME_LEN];
-    int status;
+    rodsLong_t status;
 
     std::string zone;
     irods::error ret = getLocalZone( _prop_map, &icss, zone );
@@ -1809,7 +1804,7 @@ int convert_hostname_to_dotted_decimal_ipv4_and_store_in_buffer(const char* _hos
 char *
 convertHostToIp( const char *inputName ) {
     static char ipAddr[50];
-    const int status = convert_hostname_to_dotted_decimal_ipv4_and_store_in_buffer(inputName, ipAddr);
+    const rodsLong_t status = convert_hostname_to_dotted_decimal_ipv4_and_store_in_buffer(inputName, ipAddr);
     if (status != 0) {
         rodsLog( LOG_ERROR, "convertHostToIp convert_hostname_to_dotted_decimal_ipv4_and_store_in_buffer error. status [%d]", status );
         return NULL;
@@ -1945,7 +1940,7 @@ irods::error db_open_op(
         const std::string& dbname = boost::any_cast<const std::string&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("db_name")));
         // =-=-=-=-=-=-=-
 	// call open in mid level
-	int status = cmlOpen( &icss, host, port, dbname );
+	rodsLong_t status = cmlOpen( &icss, host, port, dbname );
 	if ( 0 != status ) {
 	    return ERROR(
 		      status,
@@ -2014,7 +2009,7 @@ irods::error db_close_op(
 
     // =-=-=-=-=-=-=-
     // call open in mid level
-    int status = cmlClose( &icss );
+    rodsLong_t status = cmlClose( &icss );
     if ( 0 != status ) {
         return ERROR(
                    status,
@@ -2142,7 +2137,7 @@ irods::error db_mod_data_obj_meta_op(
 
       int i = 0, j = 0, status = 0, upCols = 0;
       rodsLong_t iVal = 0; // JMC cppcheck - uninit var
-      int status2 = 0;
+      rodsLong_t status2 = 0;
 
       int mode = 0;
 
@@ -2583,11 +2578,11 @@ irods::error db_mod_data_obj_meta_op(
       return CODE( status );
 
     };
-    if ( !( _data_obj_info->flags & NO_COMMIT_FLAG ) ) {
+//    if ( !( _data_obj_info->flags & NO_COMMIT_FLAG ) ) {
       return execTx( &icss, tx );
-    } else {
-      return tx();
-    }
+//    } else {
+//      return tx();
+//    }
 } // db_mod_data_obj_meta_op
 
 
@@ -2639,7 +2634,7 @@ irods::error db_reg_data_obj_op(
       char dataSizeNum[MAX_NAME_LEN];
       char dataStatusNum[MAX_NAME_LEN];
       char data_expiry_ts[] = { "00000000000" };
-      int status;
+      rodsLong_t status;
       int inheritFlag;
 
       if ( logSQL != 0 ) {
@@ -2811,11 +2806,11 @@ irods::error db_reg_data_obj_op(
     };
 
 
-    if ( !( _data_obj_info->flags & NO_COMMIT_FLAG ) ) {
+//    if ( !( _data_obj_info->flags & NO_COMMIT_FLAG ) ) {
       return execTx(&icss, func);
-    } else {
-      return func();
-    }
+//    } else {
+//      return func();
+//    }
 
 
 } // db_reg_data_obj_op
@@ -3345,7 +3340,7 @@ irods::error db_reg_rule_exec_op(
     char myTime[50];
     rodsLong_t seqNum;
     char ruleExecIdNum[MAX_NAME_LEN];
-    int status;
+    rodsLong_t status;
 
     if ( logSQL != 0 ) {
         rodsLog( LOG_SQL, "chlRegRuleExec" );
@@ -3570,7 +3565,7 @@ irods::error db_del_rule_exec_op(
 	      if ( logSQL != 0 ) {
 		  rodsLog( LOG_SQL, "chlDelRuleExec SQL 1 " );
 	      }
-	      int status;
+	      rodsLong_t status;
 	      {
 		  std::vector<std::string> bindVars;
 		  bindVars.push_back( _re_id );
@@ -3592,7 +3587,7 @@ irods::error db_del_rule_exec_op(
       if ( logSQL != 0 ) {
 	  rodsLog( LOG_SQL, "chlDelRuleExec SQL 2 " );
       }
-      int status =  cmlExecuteNoAnswerSql(
+      rodsLong_t status =  cmlExecuteNoAnswerSql(
 			"delete from R_RULE_EXEC where rule_exec_id=?",
 			&icss );
       if ( status != 0 ) {
@@ -3739,7 +3734,7 @@ irods::error db_add_child_resc_op(
         return PASS(ret);
     }
 
-    int status = _canConnectToCatalog( _ctx.comm() );
+    rodsLong_t status = _canConnectToCatalog( _ctx.comm() );
     if(0 != status) {
         return ERROR(
                    status,
@@ -3820,7 +3815,7 @@ irods::error db_reg_resc_op(
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
     rodsLong_t seqNum;
     char idNum[MAX_SQL_SIZE];
-    int status;
+    rodsLong_t status;
     char myTime[50];
 
     if ( logSQL != 0 ) {
@@ -3996,7 +3991,7 @@ irods::error db_del_child_resc_op(
            return PASS(ret);
     }
 
-    int status = _canConnectToCatalog( _ctx.comm() );
+    rodsLong_t status = _canConnectToCatalog( _ctx.comm() );
     if(0 != status) {
         return ERROR(
                    status,
@@ -4066,7 +4061,7 @@ irods::error db_del_resc_op(
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
 
-    int status;
+    rodsLong_t status;
     char rescId[MAX_NAME_LEN];
 
     if ( logSQL != 0 ) {
@@ -4151,7 +4146,12 @@ irods::error db_del_resc_op(
 	  return ERROR( status, "resource does not exist" );
       }
 
-      if ( _rescHasParentOrChild( rescId ) ) {
+    auto result = _rescHasParentOrChild( rescId );
+    if(!std::get<1>(result).ok()) {
+      _rollback( "chlDelResc" );
+  	  return std::get<1>(result);
+    }
+      if ( std::get<0>(result) ) {
 	  char errMsg[105];
 	  snprintf( errMsg, 100,
 		    "resource '%s' has a parent or child",
@@ -4206,37 +4206,38 @@ irods::error db_rollback_op(
     irods::plugin_context& _ctx ) {
     // =-=-=-=-=-=-=-
     // check the context
-    irods::error ret = _ctx.valid();
-    if ( !ret.ok() ) {
-        return PASS( ret );
-    }
-
-    // =-=-=-=-=-=-=-
-    // get a postgres object from the context
-    /*irods::postgres_object_ptr pg;
-    ret = make_db_ptr( _ctx.fco(), pg );
-    if ( !ret.ok() ) {
-        return PASS( ret );
-
-    }*/
-
-    // =-=-=-=-=-=-=-
-    // extract the icss property
-//        icatSessionStruct icss;
-//        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlRollback - SQL 1 " );
-    }
-
-    int status =  cmlExecuteNoAnswerSql( "rollback", &icss );
-    if ( status != 0 ) {
-        rodsLog( LOG_NOTICE,
-                 "chlRollback cmlExecuteNoAnswerSql failure %d",
-                 status );
-        return ERROR( status, "chlRollback cmlExecuteNoAnswerSql failure" );
-    }
-
-    return CODE( status );
+//     irods::error ret = _ctx.valid();
+//     if ( !ret.ok() ) {
+//         return PASS( ret );
+//     }
+//
+//     // =-=-=-=-=-=-=-
+//     // get a postgres object from the context
+//     /*irods::postgres_object_ptr pg;
+//     ret = make_db_ptr( _ctx.fco(), pg );
+//     if ( !ret.ok() ) {
+//         return PASS( ret );
+//
+//     }*/
+//
+//     // =-=-=-=-=-=-=-
+//     // extract the icss property
+// //        icatSessionStruct icss;
+// //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
+//     if ( logSQL != 0 ) {
+//         rodsLog( LOG_SQL, "chlRollback - SQL 1 " );
+//     }
+//
+//     rodsLong_t status =  cmlExecuteNoAnswerSql( "rollback", &icss );
+//     if ( status != 0 ) {
+//         rodsLog( LOG_NOTICE,
+//                  "chlRollback cmlExecuteNoAnswerSql failure %d",
+//                  status );
+//         return ERROR( status, "chlRollback cmlExecuteNoAnswerSql failure" );
+//     }
+//
+//     return CODE( status );
+  return SUCCESS();
 
 } // db_rollback_op
 
@@ -4246,36 +4247,37 @@ irods::error db_commit_op(
     irods::plugin_context& _ctx ) {
     // =-=-=-=-=-=-=-
     // check the context
-    irods::error ret = _ctx.valid();
-    if ( !ret.ok() ) {
-        return PASS( ret );
-    }
-
-    // =-=-=-=-=-=-=-
-    // get a postgres object from the context
-    /*irods::postgres_object_ptr pg;
-    ret = make_db_ptr( _ctx.fco(), pg );
-    if ( !ret.ok() ) {
-        return PASS( ret );
-
-    }*/
-
-    // =-=-=-=-=-=-=-
-    // extract the icss property
-//        icatSessionStruct icss;
-//        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlCommit - SQL 1 " );
-    }
-    int status =  cmlExecuteNoAnswerSql( "commit", &icss );
-    if ( status != 0 ) {
-        rodsLog( LOG_NOTICE,
-                 "chlCommit cmlExecuteNoAnswerSql failure %d",
-                 status );
-        return ERROR( status, "chlCommit cmlExecuteNoAnswerSql failure" );
-    }
-
-    return CODE( status );
+//     irods::error ret = _ctx.valid();
+//     if ( !ret.ok() ) {
+//         return PASS( ret );
+//     }
+//
+//     // =-=-=-=-=-=-=-
+//     // get a postgres object from the context
+//     /*irods::postgres_object_ptr pg;
+//     ret = make_db_ptr( _ctx.fco(), pg );
+//     if ( !ret.ok() ) {
+//         return PASS( ret );
+//
+//     }*/
+//
+//     // =-=-=-=-=-=-=-
+//     // extract the icss property
+// //        icatSessionStruct icss;
+// //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
+//     if ( logSQL != 0 ) {
+//         rodsLog( LOG_SQL, "chlCommit - SQL 1 " );
+//     }
+//     rodsLong_t status =  cmlExecuteNoAnswerSql( "commit", &icss );
+//     if ( status != 0 ) {
+//         rodsLog( LOG_NOTICE,
+//                  "chlCommit cmlExecuteNoAnswerSql failure %d",
+//                  status );
+//         return ERROR( status, "chlCommit cmlExecuteNoAnswerSql failure" );
+//     }
+//
+//     return CODE( status );
+  return SUCCESS();
 
 } // db_commit_op
 
@@ -4300,6 +4302,7 @@ irods::error db_del_user_re_op(
                    "null parameter" );
     }
 
+  std::function<irods::error()> tx = [&]() {
     // =-=-=-=-=-=-=-
     // get a postgres object from the context
     /*irods::postgres_object_ptr pg;
@@ -4313,7 +4316,7 @@ irods::error db_del_user_re_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     char iValStr[200];
     char zoneToUse[MAX_NAME_LEN];
     char userStr[200];
@@ -4457,6 +4460,11 @@ irods::error db_del_user_re_op(
 
     return SUCCESS();
 
+  };
+  return execTx( &icss, tx );
+
+
+
 } // db_del_user_re_op
 
 // =-=-=-=-=-=-=-
@@ -4480,6 +4488,7 @@ irods::error db_reg_coll_by_admin_op(
                    "null parameter" );
     }
 
+  std::function<irods::error()> tx = [&]() {
     // =-=-=-=-=-=-=-
     // get a postgres object from the context
     /*irods::postgres_object_ptr pg;
@@ -4500,7 +4509,7 @@ irods::error db_reg_coll_by_admin_op(
     char collIdNum[MAX_NAME_LEN];
     char nextStr[MAX_NAME_LEN];
     char currStr2[MAX_SQL_SIZE];
-    int status;
+    rodsLong_t status;
     char tSQL[MAX_SQL_SIZE];
     char userName2[NAME_LEN];
     char zoneName[NAME_LEN];
@@ -4517,7 +4526,7 @@ irods::error db_reg_coll_by_admin_op(
     // JMC - backport 4772
     if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ||
             _ctx.comm()->proxyUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-        int status2;
+        rodsLong_t status2;
         status2  = cmlCheckGroupAdminAccess(
                        _ctx.comm()->clientUser.userName,
                        _ctx.comm()->clientUser.rodsZone,
@@ -4563,7 +4572,7 @@ irods::error db_reg_coll_by_admin_op(
         return ERROR( status, "collection not found" );
     }
 
-    snprintf( collIdNum, MAX_NAME_LEN, "%d", status );
+    snprintf( collIdNum, MAX_NAME_LEN, "%lld", status );
 
     /* String to get next sequence item for objects */
     cmlGetNextSeqStr( nextStr, MAX_NAME_LEN, &icss );
@@ -4614,7 +4623,7 @@ irods::error db_reg_coll_by_admin_op(
     if ( status != 0 ) {
         char errMsg[105];
         if ( status == CATALOG_ALREADY_HAS_ITEM_BY_THAT_NAME ) {
-            snprintf( errMsg, 100, "Error %d %s",
+            snprintf( errMsg, 100, "Error %lld %s",
                       status,
                       "CATALOG_ALREADY_HAS_ITEM_BY_THAT_NAME"
                     );
@@ -4654,6 +4663,11 @@ irods::error db_reg_coll_by_admin_op(
 
 
     return SUCCESS();
+
+  };
+  return execTx( &icss, tx );
+
+
 
 } // db_reg_coll_by_admin_op
 
@@ -5055,7 +5069,7 @@ irods::error db_reg_zone_op(
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
     char nextStr[MAX_NAME_LEN];
     char tSQL[MAX_SQL_SIZE];
-    int status;
+    rodsLong_t status;
     char myTime[50];
 
     if ( logSQL != 0 ) {
@@ -5165,7 +5179,7 @@ irods::error db_mod_zone_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status, OK;
+    rodsLong_t status, OK;
     char myTime[50];
     char zoneId[MAX_NAME_LEN];
     char commentStr[200];
@@ -5335,7 +5349,6 @@ irods::error db_rename_coll_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
     rodsLong_t status1;
 
     /* See if the input path is a collection and the user owns it,
@@ -5355,12 +5368,12 @@ irods::error db_rename_coll_op(
     }
 
     /* call chlRenameObject to rename */
-    status = chlRenameObject( _ctx.comm(), status1, _new_coll );
-    if ( !status ) {
-        return ERROR( status, "chlRenameObject failed" );
+    status1 = chlRenameObject( _ctx.comm(), status1, _new_coll );
+    if ( !status1 ) {
+        return ERROR( status1, "chlRenameObject failed" );
     }
 
-    return CODE( status );
+    return CODE( status1 );
 
 } // db_rename_coll_op
 
@@ -5402,7 +5415,7 @@ irods::error db_mod_zone_coll_acl_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     if ( *_path_name != '/' ) {
         return ERROR( CAT_INVALID_ARGUMENT, "invalid path name" );
     }
@@ -5459,7 +5472,7 @@ irods::error db_rename_local_zone_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     char zoneId[MAX_NAME_LEN];
     char myTime[50];
     char commentStr[200];
@@ -5498,6 +5511,7 @@ irods::error db_rename_local_zone_op(
     if ( logSQL != 0 ) {
         rodsLog( LOG_SQL, "chlRenameLocalZone SQL 2 " );
     }
+    std::function<irods::error()> tx = [&]() {
     {
         std::vector<std::string> bindVars;
         bindVars.push_back( _new_zone );
@@ -5616,6 +5630,11 @@ irods::error db_rename_local_zone_op(
 
     return SUCCESS();
 
+};
+return execTx( &icss, tx );
+
+
+
 } // db_rename_local_zone_op
 
 // =-=-=-=-=-=-=-
@@ -5652,7 +5671,7 @@ irods::error db_del_zone_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     char zoneType[MAX_NAME_LEN];
 
     if ( logSQL != 0 ) {
@@ -6035,135 +6054,141 @@ irods::error db_del_coll_by_admin_op(
                    "null parameter" );
     }
 
-    // =-=-=-=-=-=-=-
-    // get a postgres object from the context
-    /*irods::postgres_object_ptr pg;
-    ret = make_db_ptr( _ctx.fco(), pg );
-    if ( !ret.ok() ) {
-        return PASS( ret );
+    std::function<irods::error()> tx = [&]() {
+      // =-=-=-=-=-=-=-
+      // get a postgres object from the context
+      /*irods::postgres_object_ptr pg;
+      ret = make_db_ptr( _ctx.fco(), pg );
+      if ( !ret.ok() ) {
+          return PASS( ret );
 
-    }*/
+      }*/
 
-    // =-=-=-=-=-=-=-
-    // extract the icss property
-//        icatSessionStruct icss;
-//        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    rodsLong_t iVal;
-    char logicalEndName[MAX_NAME_LEN];
-    char logicalParentDirName[MAX_NAME_LEN];
-    char collIdNum[MAX_NAME_LEN];
-    int status;
+      // =-=-=-=-=-=-=-
+      // extract the icss property
+  //        icatSessionStruct icss;
+  //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
+      rodsLong_t iVal;
+      char logicalEndName[MAX_NAME_LEN];
+      char logicalParentDirName[MAX_NAME_LEN];
+      char collIdNum[MAX_NAME_LEN];
+      rodsLong_t status;
 
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlDelCollByAdmin" );
-    }
+      if ( logSQL != 0 ) {
+          rodsLog( LOG_SQL, "chlDelCollByAdmin" );
+      }
 
-    if ( !icss.status ) {
-        return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
-    }
+      if ( !icss.status ) {
+          return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
+      }
 
-    if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-        return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
-    }
-    if ( _ctx.comm()->proxyUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-        return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
-    }
+      if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+          return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
+      }
+      if ( _ctx.comm()->proxyUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+          return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
+      }
 
-    status = splitPathByKey( _coll_info->collName,
-                             logicalParentDirName, MAX_NAME_LEN, logicalEndName, MAX_NAME_LEN, '/' );
+      status = splitPathByKey( _coll_info->collName,
+                               logicalParentDirName, MAX_NAME_LEN, logicalEndName, MAX_NAME_LEN, '/' );
 
-    if ( strlen( logicalParentDirName ) == 0 ) {
-        snprintf( logicalParentDirName, sizeof( logicalParentDirName ), "%s", PATH_SEPARATOR );
-        snprintf( logicalEndName, sizeof( logicalEndName ), "%s", _coll_info->collName + 1 );
-    }
+      if ( strlen( logicalParentDirName ) == 0 ) {
+          snprintf( logicalParentDirName, sizeof( logicalParentDirName ), "%s", PATH_SEPARATOR );
+          snprintf( logicalEndName, sizeof( logicalEndName ), "%s", _coll_info->collName + 1 );
+      }
 
-    /* check that the collection is empty (both subdirs and files) */
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlDelCollByAdmin SQL 1 " );
-    }
-    {
-        std::vector<std::string> bindVars;
-        bindVars.push_back( _coll_info->collName );
-        bindVars.push_back( _coll_info->collName );
-        status = cmlGetIntegerValueFromSql(
-                     "select coll_id from R_COLL_MAIN where parent_coll_name=? union select coll_id from R_DATA_MAIN where coll_id=(select coll_id from R_COLL_MAIN where coll_name=?)",
-                     &iVal, bindVars, &icss );
-    }
+      /* check that the collection is empty (both subdirs and files) */
+      if ( logSQL != 0 ) {
+          rodsLog( LOG_SQL, "chlDelCollByAdmin SQL 1 " );
+      }
+      {
+          std::vector<std::string> bindVars;
+          bindVars.push_back( _coll_info->collName );
+          bindVars.push_back( _coll_info->collName );
+          status = cmlGetIntegerValueFromSql(
+                       "select coll_id from R_COLL_MAIN where parent_coll_name=? union select coll_id from R_DATA_MAIN where coll_id=(select coll_id from R_COLL_MAIN where coll_name=?)",
+                       &iVal, bindVars, &icss );
+      }
 
-    if ( status != CAT_NO_ROWS_FOUND ) {
-        if ( status == 0 ) {
-            char errMsg[105];
-            snprintf( errMsg, 100, "collection '%s' is not empty",
-                      _coll_info->collName );
-            addRErrorMsg( &_ctx.comm()->rError, 0, errMsg );
-            return ERROR( CAT_COLLECTION_NOT_EMPTY, "collection not empty" );
-        }
-        _rollback( "chlDelCollByAdmin" );
-        return ERROR( status, "failed to get collection" );
-    }
+      if ( status != CAT_NO_ROWS_FOUND ) {
+          if ( status == 0 ) {
+              char errMsg[105];
+              snprintf( errMsg, 100, "collection '%s' is not empty",
+                        _coll_info->collName );
+              addRErrorMsg( &_ctx.comm()->rError, 0, errMsg );
+              return ERROR( CAT_COLLECTION_NOT_EMPTY, "collection not empty" );
+          }
+          _rollback( "chlDelCollByAdmin" );
+          return ERROR( status, "failed to get collection" );
+      }
 
-    /* remove any access rows */
-    cllBindVars[cllBindVarCount++] = _coll_info->collName;
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlDelCollByAdmin SQL 2" );
-    }
-    status =  cmlExecuteNoAnswerSql(
-                  "delete from R_OBJT_ACCESS where object_id=(select coll_id from R_COLL_MAIN where coll_name=?)",
-                  &icss );
-    if ( status != 0 ) {
-        /* error, but let it fall thru to below, probably doesn't exist */
-        rodsLog( LOG_NOTICE,
-                 "chlDelCollByAdmin delete access failure %d",
-                 status );
-        _rollback( "chlDelCollByAdmin" );
-    }
+      /* remove any access rows */
+      cllBindVars[cllBindVarCount++] = _coll_info->collName;
+      if ( logSQL != 0 ) {
+          rodsLog( LOG_SQL, "chlDelCollByAdmin SQL 2" );
+      }
+      status =  cmlExecuteNoAnswerSql(
+                    "delete from R_OBJT_ACCESS where object_id=(select coll_id from R_COLL_MAIN where coll_name=?)",
+                    &icss );
+      if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+          rodsLog( LOG_NOTICE,
+                   "chlDelCollByAdmin delete access failure %d",
+                   status );
+          _rollback( "chlDelCollByAdmin" );
+          return ERROR(status, "db_del_coll_by_admin_op: delete access failure");
+      }
 
-    /* Remove associated AVUs, if any */
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlDelCollByAdmin SQL 3 " );
-    }
-    {
-        std::vector<std::string> bindVars;
-        bindVars.push_back( _coll_info->collName );
-        status = cmlGetIntegerValueFromSql(
-                     "select coll_id from R_COLL_MAIN where coll_name=?",
-                     &iVal, bindVars, &icss );
-    }
+      /* Remove associated AVUs, if any */
+      if ( logSQL != 0 ) {
+          rodsLog( LOG_SQL, "chlDelCollByAdmin SQL 3 " );
+      }
+      {
+          std::vector<std::string> bindVars;
+          bindVars.push_back( _coll_info->collName );
+          status = cmlGetIntegerValueFromSql(
+                       "select coll_id from R_COLL_MAIN where coll_name=?",
+                       &iVal, bindVars, &icss );
+      }
 
-    if ( status != 0 ) {
-        _rollback( "db_del_coll_by_admin_op" );
-        std::stringstream msg;
-        msg << "db_del_coll_by_admin_op: should be exactly one collection id corresponding to collection name ["
-            << _coll_info->collName
-            << "]. status ["
-            << status
-            << "]";
-        return ERROR( status, msg.str().c_str() );
-    }
+      if ( status != 0 ) {
+          _rollback( "db_del_coll_by_admin_op" );
+          std::stringstream msg;
+          msg << "db_del_coll_by_admin_op: should be exactly one collection id corresponding to collection name ["
+              << _coll_info->collName
+              << "]. status ["
+              << status
+              << "]";
+          return ERROR( status, msg.str().c_str() );
+      }
 
-    snprintf( collIdNum, MAX_NAME_LEN, "%lld", iVal );
-    removeMetaMapAndAVU( collIdNum );
+      snprintf( collIdNum, MAX_NAME_LEN, "%lld", iVal );
+      removeMetaMapAndAVU( collIdNum );
 
 
 
-    /* delete the row if it exists */
-    cllBindVars[cllBindVarCount++] = _coll_info->collName;
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlDelCollByAdmin SQL 4" );
-    }
-    status =  cmlExecuteNoAnswerSql( "delete from R_COLL_MAIN where coll_name=?",
-                                     &icss );
+      /* delete the row if it exists */
+      cllBindVars[cllBindVarCount++] = _coll_info->collName;
+      if ( logSQL != 0 ) {
+          rodsLog( LOG_SQL, "chlDelCollByAdmin SQL 4" );
+      }
+      status =  cmlExecuteNoAnswerSql( "delete from R_COLL_MAIN where coll_name=?",
+                                       &icss );
 
-    if ( status != 0 ) {
-        char errMsg[105];
-        snprintf( errMsg, 100, "collection '%s' is unknown",
-                  _coll_info->collName );
-        addRErrorMsg( &_ctx.comm()->rError, 0, errMsg );
-        _rollback( "chlDelCollByAdmin" );
-        return ERROR( CAT_UNKNOWN_COLLECTION, "unknown collection" );
-    }
+      if ( status != 0 ) {
+          char errMsg[105];
+          snprintf( errMsg, 100, "collection '%s' is unknown",
+                    _coll_info->collName );
+          addRErrorMsg( &_ctx.comm()->rError, 0, errMsg );
+          _rollback( "chlDelCollByAdmin" );
+          return ERROR( CAT_UNKNOWN_COLLECTION, "unknown collection" );
+      }
 
-    return SUCCESS();
+      return SUCCESS();
+
+    };
+    return execTx( &icss, tx );
+
+
 
 } // db_del_coll_by_admin_op
 
@@ -6201,7 +6226,7 @@ irods::error db_del_coll_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
 
     if ( logSQL != 0 ) {
         rodsLog( LOG_SQL, "chlDelColl" );
@@ -6269,7 +6294,7 @@ irods::error db_check_auth_op(
   //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
       // =-=-=-=-=-=-=-
       // All The Variable
-      int status = 0;
+      rodsLong_t status = 0;
       char md5Buf[CHALLENGE_LEN + MAX_PASSWORD_LEN + 2];
       char digest[RESPONSE_LEN + 2];
       const char *cp = NULL;
@@ -6729,7 +6754,7 @@ irods::error db_make_temp_pw_op(
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
 
-    int status;
+    rodsLong_t status;
     char md5Buf[100];
     unsigned char digest[RESPONSE_LEN + 2];
     int i;
@@ -6897,7 +6922,7 @@ irods::error db_make_limited_pw_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     char md5Buf[100];
     unsigned char digest[RESPONSE_LEN + 2];
     int i;
@@ -7071,7 +7096,7 @@ irods::error db_update_pam_password_op(
     size_t i, j;
     char randomPw[50];
     char randomPwEncoded[50];
-    int status;
+    rodsLong_t status;
     char passwordInIcat[MAX_PASSWORD_LEN + 2];
     char passwordModifyTime[50];
     char *cVal[3];
@@ -7275,7 +7300,7 @@ irods::error db_mod_user_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     int opType;
     char decoded[MAX_PASSWORD_LEN + 20];
     char tSQL[MAX_SQL_SIZE];
@@ -7337,7 +7362,7 @@ irods::error db_mod_user_op(
             userSettingOwnPassword = 1;
         }
         else {
-            int status2;
+            rodsLong_t status2;
             status2  = cmlCheckGroupAdminAccess(
                            _ctx.comm()->clientUser.userName,
                            _ctx.comm()->clientUser.rodsZone,
@@ -7405,7 +7430,12 @@ irods::error db_mod_user_op(
       }
       if ( strcmp( _option, "addAuth" ) == 0 ) {
 	  opType = 4;
-	  if ( !_userInRUserAuth( userName2, zoneName, _new_value ) ) {
+    auto result = _userInRUserAuth( userName2, zoneName, _new_value );
+    if(!std::get<1>(result).ok()) {
+      _rollback("db_mod_user_op");
+      return std::get<1>(result);
+    }
+	  if ( !std::get<0>(result) ) {
 	      rstrcpy( tSQL, form5, MAX_SQL_SIZE );
 	      cllBindVars[cllBindVarCount++] = userName2;
 	      cllBindVars[cllBindVarCount++] = zoneName;
@@ -7479,9 +7509,9 @@ irods::error db_mod_user_op(
 	  int i;
 	  char userIdStr[MAX_NAME_LEN];
 	  i = decodePw( _ctx.comm(), _new_value, decoded );
-	  int status2 = icatApplyRule( _ctx.comm(), ( char* )"acCheckPasswordStrength", decoded );
+	  rodsLong_t status2 = icatApplyRule( _ctx.comm(), ( char* )"acCheckPasswordStrength", decoded );
 	  if ( status2 == NO_RULE_OR_MSI_FUNCTION_FOUND_ERR ) {
-	      int status3;
+	      rodsLong_t status3;
 	      status3 = addRErrorMsg( &_ctx.comm()->rError, 0,
 				      "acCheckPasswordStrength rule not found" );
 	  }
@@ -7547,7 +7577,7 @@ irods::error db_mod_user_op(
 
       if ( status != 0 ) { /* error */
 	  if ( opType == 1 ) { /* doing a type change, check if user_type problem */
-	      int status2;
+	      rodsLong_t status2;
 	      if ( logSQL != 0 ) {
 		  rodsLog( LOG_SQL, "chlModUser SQL 11" );
 	      }
@@ -7571,7 +7601,7 @@ irods::error db_mod_user_op(
 	  }
 	  if ( opType == 4 ) { /* trying to insert password or auth-name */
 	      /* check if user exists */
-	      int status2;
+	      rodsLong_t status2;
 	      _rollback( "chlModUser" );
 	      if ( logSQL != 0 ) {
 		  rodsLog( LOG_SQL, "chlModUser SQL 12" );
@@ -7646,7 +7676,7 @@ irods::error db_mod_group_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status, OK;
+    rodsLong_t status, OK;
     char myTime[50];
     char userId[MAX_NAME_LEN];
     char groupId[MAX_NAME_LEN];
@@ -7666,7 +7696,7 @@ irods::error db_mod_group_op(
 
     if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ||
             _ctx.comm()->proxyUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-        int status2;
+        rodsLong_t status2;
         status2  = cmlCheckGroupAdminAccess(
                        _ctx.comm()->clientUser.userName,
                        _ctx.comm()->clientUser.rodsZone, _group_name, &icss );
@@ -7675,11 +7705,11 @@ irods::error db_mod_group_op(
             /* But if we're doing an 'add' and they are a groupadmin
                 and the group is empty, allow it */
             if ( strcmp( _option, "add" ) == 0 ) {
-                int status3 =  cmlCheckGroupAdminAccess(
+                rodsLong_t status3 =  cmlCheckGroupAdminAccess(
                                    _ctx.comm()->clientUser.userName,
                                    _ctx.comm()->clientUser.rodsZone, "", &icss );
                 if ( status3 == 0 ) {
-                    int status4 = cmlGetGroupMemberCount( _group_name, &icss );
+                    rodsLong_t status4 = cmlGetGroupMemberCount( _group_name, &icss );
                     if ( status4 == 0 ) { /* call succeeded and the total is 0 */
                         status2 = 0;    /* reset the error to success to allow it */
                     }
@@ -7847,7 +7877,7 @@ irods::error db_mod_resc_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status = 0, OK = 0;
+    rodsLong_t status = 0, OK = 0;
     char myTime[50];
     char rescId[MAX_NAME_LEN];
     char rescPath[MAX_NAME_LEN] = "";
@@ -8277,7 +8307,7 @@ irods::error db_mod_resc_data_paths_op(
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
     char rescId[MAX_NAME_LEN];
-    int status, len, rows;
+    rodsLong_t status, len, rows;
     const char *cptr;
     //   char userId[NAME_LEN]="";
     char userZone[NAME_LEN];
@@ -8440,7 +8470,7 @@ irods::error db_mod_resc_freespace_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     char myTime[50];
     char updateValueStr[MAX_NAME_LEN];
 
@@ -8525,7 +8555,7 @@ irods::error db_reg_user_re_op(
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
     char myTime[50];
-    int status;
+    rodsLong_t status;
     char seqStr[MAX_NAME_LEN];
     char auditSQL[MAX_SQL_SIZE];
     char userZone[MAX_NAME_LEN];
@@ -8557,7 +8587,7 @@ irods::error db_reg_user_re_op(
     // JMC - backport 4772
     if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ||
             _ctx.comm()->proxyUser.authInfo.authFlag  < LOCAL_PRIV_USER_AUTH ) {
-        int status2;
+        rodsLong_t status2;
         status2  = cmlCheckGroupAdminAccess(
                        _ctx.comm()->clientUser.userName,
                        _ctx.comm()->clientUser.rodsZone,
@@ -8677,7 +8707,7 @@ irods::error db_reg_user_re_op(
     if ( status != 0 ) {
         if ( status == CATALOG_ALREADY_HAS_ITEM_BY_THAT_NAME ) {
             char errMsg[105];
-            snprintf( errMsg, 100, "Error %d %s",
+            snprintf( errMsg, 100, "Error %lld %s",
                       status,
                       "CATALOG_ALREADY_HAS_ITEM_BY_THAT_NAME"
                     );
@@ -8769,7 +8799,7 @@ irods::error db_set_avu_metadata_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     char myTime[50];
     rodsLong_t objId;
     char metaIdStr[MAX_NAME_LEN * 2]; /* twice as needed to query multiple */
@@ -9376,7 +9406,7 @@ irods::error db_mod_avu_metadata_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status, atype;
+    rodsLong_t status, atype;
     char myUnits[MAX_NAME_LEN] = "";
     const char *addAttr = "";
     const char *addValue = "";
@@ -9563,9 +9593,9 @@ irods::error db_del_avu_metadata_op(
 					_ctx.comm()->clientUser.rodsZone,
 					ACCESS_DELETE_METADATA, &icss );
 	  if ( status < 0 ) {
-	      if ( _nocommit != 1 ) {
+	      // if ( _nocommit != 1 ) {
 		  _rollback( "chlDeleteAVUMetadata" );
-	      }
+	      // }
 	      return ERROR( status, "delete avu failed" );
 	  }
 	  objId = status;
@@ -9620,9 +9650,9 @@ irods::error db_del_avu_metadata_op(
 	      if ( status == CAT_NO_ROWS_FOUND ) {
 		  return ERROR( CAT_INVALID_RESOURCE, "invalid resource" );
 	      }
-	      if ( _nocommit != 1 ) {
+	      // if ( _nocommit != 1 ) {
 		  _rollback( "chlDeleteAVUMetadata" );
-	      }
+	      // }
 	      return ERROR( status, "select resc_id failed" );
 	  }
       }
@@ -9661,9 +9691,9 @@ irods::error db_del_avu_metadata_op(
 	      if ( status == CAT_NO_ROWS_FOUND ) {
 		  return ERROR( CAT_INVALID_USER, "invalid user" );
 	      }
-	      if ( _nocommit != 1 ) {
+	      // if ( _nocommit != 1 ) {
 		  _rollback( "chlDeleteAVUMetadata" );
-	      }
+	      // }
 	      return ERROR( status, "select user_id failed" );
 	  }
       }
@@ -9694,9 +9724,9 @@ irods::error db_del_avu_metadata_op(
 	      if ( status == CAT_NO_ROWS_FOUND ) {
 		  return ERROR( CAT_INVALID_RESOURCE, "invalid resource" );
 	      }
-	      if ( _nocommit != 1 ) {
+	      // if ( _nocommit != 1 ) {
 		  _rollback( "chlDeleteAVUMetadata" );
-	      }
+	      // }
 	      return ERROR( status, "select failure" );
 	  }
       }
@@ -9717,9 +9747,9 @@ irods::error db_del_avu_metadata_op(
 	      rodsLog( LOG_NOTICE,
 		      "chlDeleteAVUMetadata cmlExecuteNoAnswerSql delete failure %d",
 		      status );
-	      if ( _nocommit != 1 ) {
+	      // if ( _nocommit != 1 ) {
 		  _rollback( "chlDeleteAVUMetadata" );
-	      }
+	      // }
 
 	      return ERROR( status, "delete failure" );
 	  }
@@ -9782,9 +9812,9 @@ irods::error db_del_avu_metadata_op(
 	  rodsLog( LOG_NOTICE,
 		  "chlDeleteAVUMetadata cmlExecuteNoAnswerSql delete failure %d",
 		  status );
-	  if ( _nocommit != 1 ) {
+	  // if ( _nocommit != 1 ) {
 	      _rollback( "chlDeleteAVUMetadata" );
-	  }
+	  // }
 	  return ERROR( status, "delete failure" );
       }
 
@@ -9793,11 +9823,11 @@ irods::error db_del_avu_metadata_op(
       return CODE( status );
 
     };
-    if ( _nocommit != 1 ) {
+    // if ( _nocommit != 1 ) {
       return execTx( &icss, tx );
-    } else {
-      return tx();
-    }
+    // } else {
+    //  return tx();
+    //}
 
 
 
@@ -9828,7 +9858,7 @@ irods::error db_copy_avu_metadata_op(
     }
 
     char myTime[50];
-    int status;
+    rodsLong_t status;
     rodsLong_t objId1, objId2;
     char objIdStr1[MAX_NAME_LEN];
     char objIdStr2[MAX_NAME_LEN];
@@ -10138,7 +10168,7 @@ irods::error db_mod_access_control_op(
         return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
     }
 
-    int status1;
+    rodsLong_t status1;
     std::function<irods::error()> tx = [&]() {
 
       if ( adminMode ) {
@@ -10176,7 +10206,7 @@ irods::error db_mod_access_control_op(
       }
       char collIdStr[MAX_NAME_LEN];
       if ( status1 >= 0 ) {
-	  snprintf( collIdStr, MAX_NAME_LEN, "%d", status1 );
+	  snprintf( collIdStr, MAX_NAME_LEN, "%lld", status1 );
       }
 
       if ( status1 < 0 && inheritFlag != 0 ) {
@@ -10192,7 +10222,7 @@ irods::error db_mod_access_control_op(
       if ( status1 < 0 ) {
 	  char logicalEndName[MAX_NAME_LEN];
 	  char logicalParentDirName[MAX_NAME_LEN];
-	  int status2 = splitPathByKey( _path_name,
+	  rodsLong_t status2 = splitPathByKey( _path_name,
 					logicalParentDirName, MAX_NAME_LEN, logicalEndName, MAX_NAME_LEN, '/' );
 	  if ( strlen( logicalParentDirName ) == 0 ) {
 	      snprintf( logicalParentDirName, sizeof( logicalParentDirName ), "%s", PATH_SEPARATOR );
@@ -10247,14 +10277,14 @@ irods::error db_mod_access_control_op(
 		  if ( logSQL != 0 ) {
 		      rodsLog( LOG_SQL, "chlModAccessControl SQL 12" );
 		  }
-		  int status = cmlCheckDirOwn( _path_name,
+		  rodsLong_t status = cmlCheckDirOwn( _path_name,
 					      _ctx.comm()->clientUser.userName,
 					      _ctx.comm()->clientUser.rodsZone,
 					      &icss );
 		  if ( status < 0 ) {
 		      return ERROR( status1, "cmlCheckDirOwn failed" );
 		  }
-		  snprintf( collIdStr, MAX_NAME_LEN, "%d", status );
+		  snprintf( collIdStr, MAX_NAME_LEN, "%lld", status );
 	      }
 	      else {
 		  if ( status2 == CAT_NO_ACCESS_PERMISSION ) {
@@ -10263,7 +10293,7 @@ irods::error db_mod_access_control_op(
 		      if ( logSQL != 0 ) {
 			  rodsLog( LOG_SQL, "chlModAccessControl SQL 13" );
 		      }
-		      int status = cmlCheckDataObjOwn( logicalParentDirName, logicalEndName,
+		      rodsLong_t status = cmlCheckDataObjOwn( logicalParentDirName, logicalEndName,
 						      _ctx.comm()->clientUser.userName,
 						      _ctx.comm()->clientUser.rodsZone,
 						      &icss );
@@ -10282,7 +10312,7 @@ irods::error db_mod_access_control_op(
 
       /* Doing inheritance */
       if ( inheritFlag != 0 ) {
-	  int status = _modInheritance( inheritFlag, _recursive_flag, collIdStr, _path_name );
+	  rodsLong_t status = _modInheritance( inheritFlag, _recursive_flag, collIdStr, _path_name );
 	  return ERROR( status, "_modInheritance failed" );
       }
 
@@ -10303,7 +10333,7 @@ irods::error db_mod_access_control_op(
 	  std::vector<std::string> bindVars;
 	  bindVars.push_back( _user_name );
 	  bindVars.push_back( myZone );
-	  int status = cmlGetIntegerValueFromSql(
+	  rodsLong_t status = cmlGetIntegerValueFromSql(
 			  "select user_id from R_USER_MAIN where user_name=? and R_USER_MAIN.zone_name=?",
 			  &userId, bindVars, &icss );
 	  if ( status != 0 ) {
@@ -10332,7 +10362,7 @@ irods::error db_mod_access_control_op(
 	      if ( logSQL != 0 ) {
 		  rodsLog( LOG_SQL, "chlModAccessControl SQL 4" );
 	      }
-	      int status = cmlExecuteNoAnswerSql(
+	      rodsLong_t status = cmlExecuteNoAnswerSql(
 			      "delete from R_OBJT_ACCESS where user_id=? and object_id=?",
 			      &icss );
 	      if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
@@ -10349,7 +10379,7 @@ irods::error db_mod_access_control_op(
 		  if ( logSQL != 0 ) {
 		      rodsLog( LOG_SQL, "chlModAccessControl SQL 5" );
 		  }
-		  int status = cmlExecuteNoAnswerSql(
+		  rodsLong_t status = cmlExecuteNoAnswerSql(
 				  "insert into R_OBJT_ACCESS (object_id, user_id, access_type_id, create_ts, modify_ts)  values (?, ?, (select token_id from R_TOKN_MAIN where token_namespace = 'access_type' and token_name = ?), ?, ?)",
 				  &icss );
 		  if ( status != 0 ) {
@@ -10368,7 +10398,7 @@ irods::error db_mod_access_control_op(
 	  if ( logSQL != 0 ) {
 	      rodsLog( LOG_SQL, "chlModAccessControl SQL 6" );
 	  }
-	  int status =  cmlExecuteNoAnswerSql(
+	  rodsLong_t status =  cmlExecuteNoAnswerSql(
 			    "delete from R_OBJT_ACCESS where user_id=? and object_id=?",
 			    &icss );
 	  if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
@@ -10415,7 +10445,7 @@ irods::error db_mod_access_control_op(
 
 
       std::string pathStart = makeEscapedPath( _path_name ) + "/%";
-      int status;
+      rodsLong_t status;
 
 
       cllBindVars[cllBindVarCount++] = userIdStr;
@@ -10516,6 +10546,7 @@ irods::error db_rename_object_op(
         return PASS( ret );
     }
 
+  std::function<irods::error()> tx = [&]() {
     // =-=-=-=-=-=-=-
     // get a postgres object from the context
     /*irods::postgres_object_ptr pg;
@@ -10529,7 +10560,7 @@ irods::error db_rename_object_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     rodsLong_t collId;
     rodsLong_t otherDataId;
     rodsLong_t otherCollId;
@@ -10848,6 +10879,11 @@ irods::error db_rename_object_op(
 
     return ERROR( CAT_NOT_A_DATAOBJ_AND_NOT_A_COLLECTION, "not a collection" );
 
+  };
+  return execTx( &icss, tx );
+
+
+
 } // db_rename_object_op
 
 irods::error db_move_object_op(
@@ -10873,7 +10909,7 @@ irods::error db_move_object_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     rodsLong_t collId;
     rodsLong_t otherDataId;
     rodsLong_t otherCollId;
@@ -11267,7 +11303,7 @@ irods::error db_reg_token_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     rodsLong_t objId;
     const char *myValue1;
     const char *myValue2;
@@ -11413,7 +11449,7 @@ irods::error db_del_token_op(
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
 
 
-    int status;
+    rodsLong_t status;
     rodsLong_t objId;
     char errMsg[205];
     char objIdStr[60];
@@ -11504,7 +11540,7 @@ irods::error db_reg_server_load_op(
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
     char myTime[50];
-    int status;
+    rodsLong_t status;
     int i;
 
     if ( logSQL != 0 ) {
@@ -11583,7 +11619,7 @@ irods::error db_purge_server_load_op(
 
     // =-=-=-=-=-=-=-
     // delete from R_LOAD_SERVER where (%i -exe_time) > %i
-    int status;
+    rodsLong_t status;
     char nowStr[50];
     static char thenStr[50];
     time_t nowTime;
@@ -11652,7 +11688,7 @@ irods::error db_reg_server_load_digest_op(
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
     char myTime[50];
-    int status;
+    rodsLong_t status;
     int i;
 
     if ( logSQL != 0 ) {
@@ -11724,7 +11760,7 @@ irods::error db_purge_server_load_digest_op(
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
     // =-=-=-=-=-=-=-
     /* delete from R_SERVER_LOAD_DIGEST where (%i -exe_time) > %i */
-    int status;
+    rodsLong_t status;
     char nowStr[50];
     static char thenStr[50];
     time_t nowTime;
@@ -11790,7 +11826,7 @@ irods::error db_calc_usage_and_quota_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     char myTime[50];
 
     status = 0;
@@ -11872,7 +11908,7 @@ irods::error db_set_quota_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     rodsLong_t rescId;
     rodsLong_t userId;
     char userZone[NAME_LEN];
@@ -12065,7 +12101,7 @@ irods::error db_check_quota_op(
        result).  The types of quotas are: user per-resource, user global,
        group per-resource, and group global.
     */
-    int status;
+    rodsLong_t status;
     int statementNum;
 
     char mySQL[] = "select distinct QM.user_id, QM.resc_id, QM.quota_limit, QM.quota_over from R_QUOTA_MAIN QM, R_USER_MAIN UM, R_RESC_MAIN RM, R_USER_GROUP UG, R_USER_MAIN UM2 where ( (QM.user_id = UM.user_id and UM.user_name = ?) or (QM.user_id = UG.group_user_id and UM2.user_name = ? and UG.user_id = UM2.user_id) ) and ((QM.resc_id = RM.resc_id and RM.resc_name = ?) or QM.resc_id = '0') order by quota_over desc";
@@ -12180,7 +12216,7 @@ irods::error db_ins_rule_table_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     int i;
     rodsLong_t seqNum = -1;
 
@@ -12309,7 +12345,7 @@ irods::error db_ins_dvm_table_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     int i;
     rodsLong_t seqNum = -1;
     char dvmIdStr[MAX_NAME_LEN];
@@ -12431,7 +12467,7 @@ irods::error db_ins_fnm_table_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     int i;
     rodsLong_t seqNum = -1;
     char fnmIdStr[MAX_NAME_LEN];
@@ -12557,7 +12593,7 @@ irods::error db_ins_msrvc_table_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status;
+    rodsLong_t status;
     int i;
     rodsLong_t seqNum = -1;
     char msrvcIdStr[MAX_NAME_LEN];
@@ -12901,7 +12937,7 @@ irods::error db_add_specific_query_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status, i;
+    rodsLong_t status, i;
     char myTime[50];
     char tsCreateTime[50];
     if ( logSQL != 0 ) {
@@ -12969,6 +13005,7 @@ irods::error db_add_specific_query_op(
         return ERROR( status, "insert failure" );
     }
 
+    return SUCCESS();
 
   };
   return execTx( &icss, tx );
@@ -13000,7 +13037,7 @@ irods::error db_del_specific_query_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status, i;
+    rodsLong_t status, i;
     if ( logSQL != 0 ) {
         rodsLog( LOG_SQL, "chlDelSpecificQuery" );
     }
@@ -13089,7 +13126,8 @@ irods::error db_specific_query_op(
 
     char combinedSQL[MAX_SQL_SIZE];
 
-    int status, statementNum;
+    rodsLong_t status;
+    int statementNum;
     int numOfCols;
     int attriTextLen;
     int totalLen;
@@ -13126,7 +13164,7 @@ irods::error db_specific_query_op(
                          tsCreateTime, 50, bindVars, &icss );
         }
         if ( status == CAT_NO_ROWS_FOUND ) {
-            int status2;
+            rodsLong_t status2;
             if ( logSQL != 0 ) {
                 rodsLog( LOG_SQL, "chlSpecificQuery SQL 2" );
             }
@@ -13314,7 +13352,7 @@ irods::error db_substitute_resource_hierarchies_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status = 0;
+    rodsLong_t status = 0;
     char old_hier_partial[MAX_NAME_LEN];
     irods::sql_logger logger( "chlSubstituteResourceHierarchies", logSQL );
 
@@ -13414,7 +13452,7 @@ irods::error db_get_distinct_data_obj_count_on_resource_op(
     // =-=-=-=-=-=-=-
     // invoke the query
     int statement_num = 0;
-    int status = cmlGetFirstRowFromSql(
+    rodsLong_t status = cmlGetFirstRowFromSql(
                      query,
                      &statement_num,
                      &icss );
@@ -13499,7 +13537,7 @@ irods::error db_get_distinct_data_objs_missing_from_child_given_parent_op(
     for ( int i = 0; ; i++ ) {
         // =-=-=-=-=-=-=-
         // extract either the first or next row
-        int status = 0;
+        rodsLong_t status = 0;
         if ( 0 == i ) {
             status = cmlGetFirstRowFromSql(
                          query,
@@ -13578,7 +13616,7 @@ irods::error db_get_repl_list_for_leaf_bundles_op(
     _results->reserve(_count);
 
     int statement_num = 0;
-    const int status_cmlGetFirstRowFromSql = cmlGetFirstRowFromSql(query.c_str(), &statement_num, &icss);
+    const rodsLong_t status_cmlGetFirstRowFromSql = cmlGetFirstRowFromSql(query.c_str(), &statement_num, &icss);
     if (status_cmlGetFirstRowFromSql == CAT_NO_ROWS_FOUND) {
         cmlFreeStatement(statement_num, &icss);
         return SUCCESS();
@@ -13590,7 +13628,7 @@ irods::error db_get_repl_list_for_leaf_bundles_op(
     _results->push_back(atoll(result_sets[statement_num]->get_value(0)));
 
     for (rodsLong_t i=1; i<_count; ++i) {
-        const int status_cmlGetNextRowFromStatement = cmlGetNextRowFromStatement(statement_num, &icss);
+        const rodsLong_t status_cmlGetNextRowFromStatement = cmlGetNextRowFromStatement(statement_num, &icss);
         if (status_cmlGetNextRowFromStatement == CAT_NO_ROWS_FOUND) {
             break;
         }
@@ -13643,7 +13681,7 @@ irods::error db_get_hierarchy_for_resc_op(
 
     char *current_node;
     char parent[MAX_NAME_LEN];
-    int status;
+    rodsLong_t status;
 
 
     irods::sql_logger logger( "chlGetHierarchyForResc", logSQL );
@@ -14333,7 +14371,7 @@ irods::error db_gen_query_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status = chl_gen_query_impl(
+    rodsLong_t status = chl_gen_query_impl(
                      *_gen_query_inp,
                      _result );
 //         if( status < 0 ) {
@@ -14383,7 +14421,7 @@ irods::error db_gen_query_access_control_setup_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status = chl_gen_query_access_control_setup_impl(
+    rodsLong_t status = chl_gen_query_access_control_setup_impl(
                      _user,
                      _zone,
                      _host,
@@ -14434,7 +14472,7 @@ irods::error db_gen_query_ticket_setup_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status = chl_gen_query_ticket_setup_impl(
+    rodsLong_t status = chl_gen_query_ticket_setup_impl(
                      _ticket,
                      _client_addr );
     if ( status < 0 ) {
@@ -14480,7 +14518,7 @@ irods::error db_general_update_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    int status = chl_general_update_impl(
+    rodsLong_t status = chl_general_update_impl(
                      *_update_inp );
     if ( status < 0 ) {
         return ERROR( status, "chl_general_update_impl( failed" );

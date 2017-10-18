@@ -196,8 +196,6 @@ std::tuple<int, std::string> processRes(const std::string &_sql, const std::vect
     		  PQresStatus(stat), _sql.c_str() );
     	  result = logPsgError( LOG_NOTICE, res );
         std::string stat = std::string(PQresultErrorField(res, PG_DIAG_SQLSTATE));
-    	  PQclear(res);
-    	  res = NULL;
 
         return std::make_tuple(result, stat);
       }
@@ -207,6 +205,9 @@ std::tuple<int, std::string> processRes(const std::string &_sql, const std::vect
 std::tuple<int, std::string> _execTxSql(PGconn *conn, const std::string &_sql) {
   PGresult *res;
   res = PQexec(conn, _sql.c_str());
+  BOOST_SCOPE_EXIT (res) {
+    PQclear(res);
+  } BOOST_SCOPE_EXIT_END
   return processRes(_sql, std::vector<std::string>(), res);
 }
 

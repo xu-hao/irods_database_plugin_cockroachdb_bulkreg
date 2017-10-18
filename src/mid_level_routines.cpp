@@ -93,19 +93,25 @@ int cmlClose( icatSessionStruct *icss ) {
     }
     return 0;
 }
+int convertCllError(int i, bool noConvertSuccessButNoInfo = false) {
+  if ( i ) {
+    if ( i <= CAT_ENV_ERR ) {
+        if(i == CAT_SUCCESS_BUT_WITH_NO_INFO && !noConvertSuccessButNoInfo) {
+            return CAT_NO_ROWS_FOUND;
+        }
+        return ( i );   /* already an iRODS error code */
+    }
+    return CAT_SQL_ERR;
+  }
+  return 0;
 
+}
 
 int cmlExecuteNoAnswerSql( const char *sql,
                            const icatSessionStruct *icss ) {
     int i;
     i = cllExecSqlNoResult( icss, sql );
-    if ( i ) {
-        if ( i <= CAT_ENV_ERR ) {
-            return ( i );   /* already an iRODS error code */
-        }
-        return CAT_SQL_ERR;
-    }
-    return 0;
+    return convertCllError(i, true);
 
 }
 
@@ -128,16 +134,10 @@ int cmlGetOneRowFromSqlV2( const char *sql,
         strncat( updatedSql, " limit 1", MAX_SQL_SIZE );
         rodsLog( LOG_DEBUG10, "cmlGetOneRowFromSqlBV %s", updatedSql );
     }
-    int status = execSql( icss, &resset, updatedSql,
-                                         bindVars );
+    int status = convertCllError(execSql( icss, &resset, updatedSql,
+                                         bindVars ));
     if ( status != 0 ) {
-        if ( status <= CAT_ENV_ERR ) {
-	    if(status == CAT_SUCCESS_BUT_WITH_NO_INFO) {
-		return CAT_NO_ROWS_FOUND;
-	    }
-            return status;    /* already an iRODS error code */
-        }
-        return CAT_SQL_ERR;
+        return status;
     }
 
     if ( ! resset->has_row() ) {
@@ -158,27 +158,27 @@ int cmlGetOneRowFromSqlBV( const char *sql,
                            int numOfCols,
                            const std::vector<std::string> &bindVars,
                            const icatSessionStruct *icss ) {
-  
+
     std::vector<const char *> tmp;
     tmp.resize(numOfCols);
     std::fill(tmp.begin(), tmp.end(), nullptr);
-    
+
     result_set *resset;
-    
+
     int numCVal = cmlGetOneRowFromSqlV2(sql, resset, tmp.data(), numOfCols, bindVars, icss);
 
     BOOST_SCOPE_EXIT (resset) {
       delete resset;
     } BOOST_SCOPE_EXIT_END
-    
+
     if (numCVal < 0) {
       return numCVal;
     }
-    
+
     for(int i = 0; i<numCVal;i++)  {
       snprintf(cVal[i], cValSize[i], "%s", tmp[i]);
     }
-    
+
     return numCVal;
 
 }
@@ -189,7 +189,7 @@ int cmlGetOneRowFromSql( const char *sql,
                          int numOfCols,
                          const icatSessionStruct *icss ) {
     return cmlGetOneRowFromSqlBV(sql, cVal, cValSize, numOfCols, std::vector<std::string>(), icss);
-    
+
 }
 
 
@@ -221,17 +221,12 @@ int cmlGetFirstRowFromSqlBV( const char *sql,
                              const std::vector<std::string> &bindVars,
                              int *statement,
                              const icatSessionStruct *icss ) {
-    int i = cllExecSqlWithResultBV( icss, statement, sql, bindVars );
+    int i = convertCllError(cllExecSqlWithResultBV( icss, statement, sql, bindVars ));
 
     if ( i != 0 ) {
         cllFreeStatement( *statement );
         *statement = 0;
-        if ( i <= CAT_ENV_ERR ) {
-            if(i==CAT_SUCCESS_BUT_WITH_NO_INFO) {
-	    return CAT_NO_ROWS_FOUND;
-	  } else {return ( i );   /* already an iRODS error code */}
-        }
-        return CAT_SQL_ERR;
+        return ( i );
     }
 
     if ( ! result_sets[*statement]->has_row() ) {
@@ -255,17 +250,9 @@ int cmlGetFirstRowFromSql( const char *sql,
 
 int cmlGetNextRowFromStatement( int stmtNum,
                                 const icatSessionStruct *icss ) {
-    int i = result_sets[stmtNum]->next_row();
+    int i = convertCllError(result_sets[stmtNum]->next_row());
     if ( i != 0 ) {
-        cllFreeStatement( stmtNum );
-        if ( i <= CAT_ENV_ERR ) {
-	  if(i==CAT_SUCCESS_BUT_WITH_NO_INFO) {
-	    return CAT_NO_ROWS_FOUND;
-	  } else {
-            return ( i );   /* already an iRODS error code */
-	  }
-        }
-        return CAT_SQL_ERR;
+        return ( i );
     }
 
     if ( ! result_sets[stmtNum]->has_row() ) {
@@ -331,12 +318,9 @@ int cmlGetMultiRowStringValuesFromSql( const char *sql,
         return CAT_INVALID_ARGUMENT;
     }
 
-    i = cllExecSqlWithResultBV( icss, &stmtNum, sql, bindVars );
+    i = convertCllError(cllExecSqlWithResultBV( icss, &stmtNum, sql, bindVars ));
     if ( i != 0 ) {
-        if ( i <= CAT_ENV_ERR ) {
-            return ( i );   /* already an iRODS error code */
-        }
-        return CAT_SQL_ERR;
+        return ( i );
     }
     tsg = 0;
     pString = returnedStrings;
@@ -1500,7 +1484,7 @@ cmlAudit3( int actionId, const char *dataId, const char *userName, const char *z
     if ( status != 0 ) {
         rodsLog( LOG_NOTICE, "cmlAudit3 insert failure %d", status );
     }
-    
+
     return status;
 }
 

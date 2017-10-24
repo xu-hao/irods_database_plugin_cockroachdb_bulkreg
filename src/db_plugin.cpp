@@ -1466,15 +1466,9 @@ int _modInheritance( int inheritFlag, int recursiveFlag, const char *collIdStr, 
         if ( logSQL != 0 ) {
             rodsLog( LOG_SQL, "_modInheritance SQL 2" );
         }
-#ifdef ORA_ICAT
-        status =  cmlExecuteNoAnswerSql(
-                      "update R_COLL_MAIN set coll_inheritance=?, modify_ts=? where coll_name = ? or coll_name like ? ESCAPE '\\'",
-                      &icss );
-#else
         status =  cmlExecuteNoAnswerSql(
                       "update R_COLL_MAIN set coll_inheritance=?, modify_ts=? where coll_name = ? or coll_name like ?",
                       &icss );
-#endif
     }
     if ( status != 0 ) {
         _rollback( "_modInheritance" );
@@ -1535,22 +1529,35 @@ int setOverQuota( rsComm_t *rsComm ) {
     if ( logSQL != 0 ) {
         rodsLog( LOG_SQL, "setOverQuota SQL 2" );
     }
-    status =  cmlExecuteNoAnswerSql(
-#if ORA_ICAT
-                  "update R_QUOTA_MAIN set quota_over = (select distinct R_QUOTA_USAGE.quota_usage - R_QUOTA_MAIN.quota_limit from R_QUOTA_USAGE where R_QUOTA_MAIN.user_id = R_QUOTA_USAGE.user_id and R_QUOTA_MAIN.resc_id = R_QUOTA_USAGE.resc_id) where exists (select 1 from R_QUOTA_USAGE where R_QUOTA_MAIN.user_id = R_QUOTA_USAGE.user_id and R_QUOTA_MAIN.resc_id = R_QUOTA_USAGE.resc_id)",
-#elif MY_ICAT
-                  "update R_QUOTA_MAIN, R_QUOTA_USAGE set R_QUOTA_MAIN.quota_over = R_QUOTA_USAGE.quota_usage - R_QUOTA_MAIN.quota_limit where R_QUOTA_MAIN.user_id = R_QUOTA_USAGE.user_id and R_QUOTA_MAIN.resc_id = R_QUOTA_USAGE.resc_id",
-#else
-                  "update R_QUOTA_MAIN set quota_over = quota_usage - quota_limit from R_QUOTA_USAGE where R_QUOTA_MAIN.user_id = R_QUOTA_USAGE.user_id and R_QUOTA_MAIN.resc_id = R_QUOTA_USAGE.resc_id",
-#endif
-                  & icss );
-    if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
-        status = 0;    /* none */
+    
+    status = cmlGetFirstRowFromSql("select quota_usage, user_id, resc_id from R_QUOTA_USAGE", &statementNum, &icss);
+    while(status == 0) {
+      std::vector<std::string> bindVars;
+      bindVars.push_back(result_sets[statementNum]->get_value(0));
+      bindVars.push_back(result_sets[statementNum]->get_value(1));
+      bindVars.push_back(result_sets[statementNum]->get_value(2));
+      status =  cmlExecuteNoAnswerSqlBV(
+		    "update R_QUOTA_MAIN set quota_over = ? - quota_limit where R_QUOTA_MAIN.user_id = ? and R_QUOTA_MAIN.resc_id = ?",
+		    bindVars,
+		    & icss );
+      if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+	  status = 0;    /* none */
+      }
+      if ( status != 0 ) {
+	  break;
+      }
+      status = result_sets[statementNum]->next_row();
+    }
+    int status2 = cmlFreeStatement(statementNum, &icss);
+    if ( status2 != 0 ) {
+      return status2;
+    }
+    if ( status == CAT_NO_ROWS_FOUND ) {
+      status = 0;    /* none */
     }
     if ( status != 0 ) {
-        return status;
+      return status;
     }
-
     /* Set the over_quota values for irods-total, if any, and only if
        the this over_quota value is higher than the previous.  Do it in
        two steps to keep it simplier (there may be a better way tho).
@@ -1562,7 +1569,7 @@ int setOverQuota( rsComm_t *rsComm ) {
     for ( rowsFound = 0;; rowsFound++ ) {
         rodsLong_t status2;
         if ( rowsFound == 0 ) {
-            status = cmlGetFirstRowFromSql( "select sum(quota_usage), R_QUOTA_MAIN.user_id from R_QUOTA_USAGE, R_QUOTA_MAIN where R_QUOTA_MAIN.user_id = R_QUOTA_USAGE.user_id and R_QUOTA_MAIN.resc_id = '0' group by R_QUOTA_MAIN.user_id",
+            status = cmlGetFirstRowFromSql( "select sum(quota_usage), R_QUOTA_MAIN.user_id from R_QUOTA_USAGE, R_QUOTA_MAIN where R_QUOTA_MAIN.user_id = R_QUOTA_USAGE.user_id and R_QUOTA_MAIN.resc_id = 0 group by R_QUOTA_MAIN.user_id",
                                             &statementNum, &icss );
         }
         else {
@@ -10456,7 +10463,7 @@ irods::error db_mod_access_control_op(
 	  rodsLog( LOG_SQL, "chlModAccessControl SQL 8" );
       }
       status =  cmlExecuteNoAnswerSql(
-		    "delete from R_OBJT_ACCESS where user_id=? and object_id = ANY (select data_id from R_DATA_MAIN where coll_id in (select coll_id from R_COLL_MAIN where coll_name = ? or coll_name like ? ESCAPE '\\'))",
+		    "delete from R_OBJT_ACCESS where user_id=? and object_id in (select data_id from R_DATA_MAIN where coll_id in (select coll_id from R_COLL_MAIN where coll_name = ? or coll_name like ?))",
 		    & icss );
 
       if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
@@ -10472,7 +10479,7 @@ irods::error db_mod_access_control_op(
 	  rodsLog( LOG_SQL, "chlModAccessControl SQL 9" );
       }
       status =  cmlExecuteNoAnswerSql(
-		    "delete from R_OBJT_ACCESS where user_id=? and object_id = ANY (select coll_id from R_COLL_MAIN where coll_name = ? or coll_name like ? ESCAPE '\\')",
+		    "delete from R_OBJT_ACCESS where user_id=? and object_id in (select coll_id from R_COLL_MAIN where coll_name = ? or coll_name like ?)",
 		    & icss );
       if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
 	  _rollback( "chlModAccessControl" );
@@ -10496,7 +10503,7 @@ irods::error db_mod_access_control_op(
 	  rodsLog( LOG_SQL, "chlModAccessControl SQL 10" );
       }
       status =  cmlExecuteNoAnswerSql(
-		    "insert into R_OBJT_ACCESS (object_id, user_id, access_type_id, create_ts, modify_ts)  (select distinct data_id, cast(? as integer), (select token_id from R_TOKN_MAIN where token_namespace = 'access_type' and token_name = ?), ?, ? from R_DATA_MAIN where coll_id in (select coll_id from R_COLL_MAIN where coll_name = ? or coll_name like ? ESCAPE '\\'))",
+		    "insert into R_OBJT_ACCESS (object_id, user_id, access_type_id, create_ts, modify_ts)  (select distinct data_id, cast(? as integer), (select token_id from R_TOKN_MAIN where token_namespace = 'access_type' and token_name = ?), ?, ? from R_DATA_MAIN where coll_id in (select coll_id from R_COLL_MAIN where coll_name = ? or coll_name like ?))",
 		    &icss );
       if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
 	  status = 0;    /* no files, OK */
@@ -11859,7 +11866,7 @@ irods::error db_calc_usage_and_quota_op(
       }
       cllBindVars[cllBindVarCount++] = myTime;
       status =  cmlExecuteNoAnswerSql(
-		    "insert into R_QUOTA_USAGE (quota_usage, resc_id, user_id, modify_ts) (select sum(R_DATA_MAIN.data_size), R_RESC_MAIN.resc_id, R_USER_MAIN.user_id, ? from R_DATA_MAIN, R_USER_MAIN, R_RESC_MAIN where R_USER_MAIN.user_name = R_DATA_MAIN.data_owner_name and R_USER_MAIN.zone_name = R_DATA_MAIN.data_owner_zone and R_RESC_MAIN.resc_id = R_DATA_MAIN.resc_id group by R_RESC_MAIN.resc_id, user_id)",
+		    "insert into R_QUOTA_USAGE (quota_usage, resc_id, user_id, modify_ts) (select sum(R_DATA_MAIN.data_size) :: integer, R_RESC_MAIN.resc_id, R_USER_MAIN.user_id, ? from R_DATA_MAIN, R_USER_MAIN, R_RESC_MAIN where R_USER_MAIN.user_name = R_DATA_MAIN.data_owner_name and R_USER_MAIN.zone_name = R_DATA_MAIN.data_owner_zone and R_RESC_MAIN.resc_id = R_DATA_MAIN.resc_id group by R_RESC_MAIN.resc_id, user_id)",
 		    &icss );
       if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
 	  status = 0;    /* no files, OK */
@@ -12104,7 +12111,7 @@ irods::error db_check_quota_op(
     rodsLong_t status;
     int statementNum;
 
-    char mySQL[] = "select distinct QM.user_id, QM.resc_id, QM.quota_limit, QM.quota_over from R_QUOTA_MAIN QM, R_USER_MAIN UM, R_RESC_MAIN RM, R_USER_GROUP UG, R_USER_MAIN UM2 where ( (QM.user_id = UM.user_id and UM.user_name = ?) or (QM.user_id = UG.group_user_id and UM2.user_name = ? and UG.user_id = UM2.user_id) ) and ((QM.resc_id = RM.resc_id and RM.resc_name = ?) or QM.resc_id = '0') order by quota_over desc";
+    char mySQL[] = "select distinct QM.user_id, QM.resc_id, QM.quota_limit, QM.quota_over from R_QUOTA_MAIN QM, R_USER_MAIN UM, R_RESC_MAIN RM, R_USER_GROUP UG, R_USER_MAIN UM2 where ( (QM.user_id = UM.user_id and UM.user_name = ?) or (QM.user_id = UG.group_user_id and UM2.user_name = ? and UG.user_id = UM2.user_id) ) and ((QM.resc_id = RM.resc_id and RM.resc_name = ?) or QM.resc_id = 0) order by quota_over desc";
 
     *_user_quota = 0;
     if ( logSQL != 0 ) {

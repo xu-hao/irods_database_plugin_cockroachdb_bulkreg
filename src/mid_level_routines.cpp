@@ -115,6 +115,15 @@ int cmlExecuteNoAnswerSql( const char *sql,
 
 }
 
+int cmlExecuteNoAnswerSqlBV( const char *sql,
+                           const std::vector<std::string> &bindVars,
+                           const icatSessionStruct *icss ) {
+    int i;
+    i = execSql( icss, sql, bindVars );
+    return convertCllError(i, true);
+
+}
+
 /* like cmlGetOneRowFromSql but cVal uses space from query
    and then caller frees it later (via cmlFreeStatement).
    This is simplier for the caller, in some cases.   */

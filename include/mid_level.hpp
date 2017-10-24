@@ -22,7 +22,9 @@ int cmlClose( icatSessionStruct *icss );
 
 int cmlExecuteNoAnswerSql( const char *sql,
                            const icatSessionStruct *icss );
-
+int cmlExecuteNoAnswerSqlBV( const char *sql,
+                           const std::vector<std::string> &bindVars,
+                           const icatSessionStruct *icss );
 int cmlGetRowFromSql( const char *sql,
                       char * const cVal[],
                       const int cValSize[],

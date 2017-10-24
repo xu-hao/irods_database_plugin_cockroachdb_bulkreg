@@ -171,6 +171,14 @@ std::string replaceParams(const std::string &_sql) {
   return ss.str();
 }
 
+std::string replaceLikesToSimilarTos(const std::string &_sql) {
+  std::string res(_sql);
+  boost::replace_all(res, " like ", " similar to ");
+  boost::replace_all(res, " LIKE ", " SIMILAR TO ");
+  return res;
+}
+
+
 std::tuple<int, std::string> processRes(const std::string &_sql, const std::vector<std::string> &bindVars, PGresult *res) {
       ExecStatusType stat = PQresultStatus(res);
       rodsLogSqlResult( PQresStatus(stat) );
@@ -307,7 +315,7 @@ int _execSql(PGconn *conn, const std::string &_sql, const std::vector<std::strin
       rodsLog( LOG_DEBUG10, "%s", _sql.c_str() );
       rodsLogSql( _sql.c_str() );
 
-      std::string sql = replaceParams(_sql);
+      std::string sql = replaceLikesToSimilarTos(replaceParams(_sql));
 
       std::vector<const char *> bs;
       std::transform(bindVars.begin(), bindVars.end(), std::back_inserter(bs), [](const std::string &str){return str.c_str();});

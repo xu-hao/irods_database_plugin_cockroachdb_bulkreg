@@ -9850,9 +9850,6 @@ irods::error _del_avu_metadata(
 	rodsLog( LOG_NOTICE,
 		"chlDeleteAVUMetadata cmlExecuteNoAnswerSql delete failure %d",
 		status );
-	// if ( _nocommit != 1 ) {
-	    _rollback( "chlDeleteAVUMetadata" );
-	// }
 	return ERROR( status, "delete failure" );
     }
 

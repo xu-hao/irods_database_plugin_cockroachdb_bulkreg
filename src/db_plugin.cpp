@@ -60,7 +60,23 @@ extern int icatApplyRule( rsComm_t *rsComm, char *ruleName, char *arg1 );
 static char prevChalSig[200]; /* a 'signature' of the previous
                           challenge.  This is used as a sessionSignature on the ICAT server
                           side.  Also see getSessionSignatureClientside function. */
-
+irods::error _add_avu_metadata(
+    irods::plugin_context& _ctx,
+    int                    _admin_mode,
+    const char*            _type,
+    const char*            _name,
+    const char*            _attribute,
+    const char*            _value,
+    const char*            _units );
+irods::error _del_avu_metadata(
+    irods::plugin_context& _ctx,
+    int                    _option,
+    const char*            _type,
+    const char*            _name,
+    const char*            _attribute,
+    const char*            _value,
+    const char*            _unit,
+    int                    _nocommit );
 
 //   Legal values for accessLevel in  chlModAccessControl (Access Parameter).
 //   Defined here since other code does not need them (except for help messages)
@@ -8860,8 +8876,9 @@ irods::error db_set_avu_metadata_op(
       if ( status <= 0 ) {
 	  if ( status == CAT_NO_ROWS_FOUND ) {
 	      /* Need to add the metadata */
-	      status = chlAddAVUMetadata( _ctx.comm(), 0, _type, _name, _attribute,
-					  _new_value, _new_unit );
+	      status = _add_avu_metadata( _ctx, 0, _type, _name, _attribute,
+					  _new_value, _new_unit ).code();
+	      return SUCCESS();
 	  }
 	  else {
 	      rodsLog( LOG_NOTICE,
@@ -8873,8 +8890,8 @@ irods::error db_set_avu_metadata_op(
 
       if ( status > 1 ) {
 	  /* Cannot update AVU in-place, need to do a delete with wildcards then add */
-	  status = chlDeleteAVUMetadata( _ctx.comm(), 1, _type, _name, _attribute, "%",
-					"%", 1 );
+	  status = _del_avu_metadata( _ctx, 1, _type, _name, _attribute, "%",
+					"%", 1 ).code();
 	  if ( status != 0 ) {
 	      /* Give it a second chance
 	      * as per r5350:
@@ -8897,16 +8914,16 @@ irods::error db_set_avu_metadata_op(
 	      * actually fixed. Leaving it in for now, as it is marginally better than the
 	      * alternative, but this is a definite TODO: Implement AVUMetadata locks.
 	      */
-	      status = chlDeleteAVUMetadata( _ctx.comm(), 1, _type, _name, _attribute, "%",
-					    "%", 1 );
+	      status = _del_avu_metadata( _ctx, 1, _type, _name, _attribute, "%",
+					    "%", 1 ).code();
 	  }
 	  if ( status != 0 ) {
 	      _rollback( "chlSetAVUMetadata" );
 	      return ERROR( status, "delete avu metadata failed" );
 	  }
-	  status = chlAddAVUMetadata( _ctx.comm(), 0, _type, _name, _attribute,
-				      _new_value, _new_unit );
-	  return ERROR( status, "delete avu metadata failed" );
+	  status = _add_avu_metadata( _ctx, 0, _type, _name, _attribute,
+				      _new_value, _new_unit ).code();
+	  return SUCCESS();
       }
 
       /* Only one metaId for this Attribute and Object has been found, and the metaID is not shared */
@@ -9057,7 +9074,7 @@ irods::error db_add_avu_metadata_wild_op(
 
 } // db_add_avu_metadata_wild_op
 
-irods::error db_add_avu_metadata_op(
+irods::error _add_avu_metadata(
     irods::plugin_context& _ctx,
     int                    _admin_mode,
     const char*            _type,
@@ -9069,16 +9086,16 @@ irods::error db_add_avu_metadata_op(
     // check the context
     irods::error ret = _ctx.valid();
     if ( !ret.ok() ) {
-        return PASS( ret );
+	return PASS( ret );
     }
 
     // =-=-=-=-=-=-=-
     // check the params
     if (
-        !_type   ||
-        !_name   ||
-        !_attribute ) {
-        return ERROR( CAT_INVALID_ARGUMENT, "null parameter" );
+	!_type   ||
+	!_name   ||
+	!_attribute ) {
+	return ERROR( CAT_INVALID_ARGUMENT, "null parameter" );
 
     }
 
@@ -9087,7 +9104,7 @@ irods::error db_add_avu_metadata_op(
     /*irods::postgres_object_ptr pg;
     ret = make_db_ptr( _ctx.fco(), pg );
     if ( !ret.ok() ) {
-        return PASS( ret );
+	return PASS( ret );
 
     }*/
 
@@ -9107,264 +9124,279 @@ irods::error db_add_avu_metadata_op(
     char userZone[NAME_LEN];
 
     if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlAddAVUMetadata" );
+	rodsLog( LOG_SQL, "chlAddAVUMetadata" );
     }
 
     if ( !icss.status ) {
-        return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
+	return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
     }
 
     if ( _type == NULL || *_type == '\0' ) {
-        return ERROR( CAT_INVALID_ARGUMENT, "type null or empty" );
+	return ERROR( CAT_INVALID_ARGUMENT, "type null or empty" );
     }
 
     if ( _name == NULL || *_name == '\0' ) {
-        return ERROR( CAT_INVALID_ARGUMENT, "name null or empty" );
+	return ERROR( CAT_INVALID_ARGUMENT, "name null or empty" );
     }
 
     if ( _attribute == NULL || *_attribute == '\0' ) {
-        return ERROR( CAT_INVALID_ARGUMENT, "attribute null or empty" );
+	return ERROR( CAT_INVALID_ARGUMENT, "attribute null or empty" );
     }
 
     if ( _value == NULL || *_value == '\0' ) {
-        return  ERROR( CAT_INVALID_ARGUMENT, "value null or empty" );
+	return  ERROR( CAT_INVALID_ARGUMENT, "value null or empty" );
     }
 
     if ( _admin_mode == 1 ) {
-        if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-            return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
-        }
+	if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+	    return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
+	}
     }
 
     if ( _units == NULL ) {
-        _units = "";
+	_units = "";
     }
 
     itype = convertTypeOption( _type );
     if ( itype == 0 ) {
-        return ERROR( CAT_INVALID_ARGUMENT, "invalid type argument" );
+	return ERROR( CAT_INVALID_ARGUMENT, "invalid type argument" );
     }
+
+    if ( itype == 1 ) {
+	status = splitPathByKey( _name,
+				logicalParentDirName, MAX_NAME_LEN, logicalEndName, MAX_NAME_LEN, '/' );
+	if ( strlen( logicalParentDirName ) == 0 ) {
+	    snprintf( logicalParentDirName, sizeof( logicalParentDirName ), "%s", PATH_SEPARATOR );
+	    snprintf( logicalEndName, sizeof( logicalEndName ), "%s", _name );
+	}
+	if ( _admin_mode == 1 ) {
+	    if ( logSQL != 0 ) {
+		rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 1 " );
+	    }
+	    {
+		std::vector<std::string> bindVars;
+		bindVars.push_back( logicalEndName );
+		bindVars.push_back( logicalParentDirName );
+		status = cmlGetIntegerValueFromSql(
+			    "select data_id from R_DATA_MAIN DM, R_COLL_MAIN CM where "
+			    "DM.data_name=? and DM.coll_id=CM.coll_id and CM.coll_name=?",
+			    &iVal, bindVars, &icss );
+	    }
+	    if ( status == 0 ) {
+		status = iVal;    /*like cmlCheckDataObjOnly, status is objid */
+	    }
+	}
+	else {
+	    if ( logSQL != 0 ) {
+		rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 2" );
+	    }
+	    status = cmlCheckDataObjOnly( logicalParentDirName, logicalEndName,
+					  _ctx.comm()->clientUser.userName,
+					  _ctx.comm()->clientUser.rodsZone,
+					  ACCESS_CREATE_METADATA, &icss );
+	}
+	if ( status < 0 ) {
+	    _rollback( "chlAddAVUMetadata" );
+	    return ERROR( status, "select data_id failed" );
+	}
+	objId = status;
+    }
+
+    if ( itype == 2 ) {
+	if ( _admin_mode == 1 ) {
+	    if ( logSQL != 0 ) {
+		rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 3" );
+	    }
+	    {
+		std::vector<std::string> bindVars;
+		bindVars.push_back( _name );
+		status = cmlGetIntegerValueFromSql(
+			    "select coll_id from R_COLL_MAIN where coll_name=?",
+			    &iVal, bindVars, &icss );
+	    }
+	    if ( status == 0 ) {
+		status = iVal;    /*like cmlCheckDir, status is objid*/
+	    }
+	}
+	else {
+	    /* Check that the collection exists and user has create_metadata
+	      permission, and get the collectionID */
+	    if ( logSQL != 0 ) {
+		rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 4" );
+	    }
+	    status = cmlCheckDir( _name,
+				  _ctx.comm()->clientUser.userName,
+				  _ctx.comm()->clientUser.rodsZone,
+				  ACCESS_CREATE_METADATA, &icss );
+	}
+	if ( status < 0 ) {
+	    char errMsg[105];
+	    _rollback( "chlAddAVUMetadata" );
+	    if ( status == CAT_UNKNOWN_COLLECTION ) {
+		snprintf( errMsg, 100, "collection '%s' is unknown",
+			  _name );
+		addRErrorMsg( &_ctx.comm()->rError, 0, errMsg );
+	    }
+	    else {
+		_rollback( "chlAddAVUMetadata" );
+	    }
+	    return ERROR( status, "cmlCheckDir failed" );
+	}
+	objId = status;
+    }
+
+    if ( itype == 3 ) {
+	if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+	    return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
+	}
+
+	std::string zone;
+	ret = getLocalZone( _ctx.prop_map(), &icss, zone );
+	if ( !ret.ok() ) {
+	    return PASS( ret );
+	}
+
+	objId = 0;
+	if ( logSQL != 0 ) {
+	    rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 5" );
+	}
+	{
+	    std::vector<std::string> bindVars;
+	    bindVars.push_back( _name );
+	    bindVars.push_back( zone );
+	    status = cmlGetIntegerValueFromSql(
+			"select resc_id from R_RESC_MAIN where resc_name=? and zone_name=?",
+			&objId, bindVars, &icss );
+	}
+	if ( status != 0 ) {
+	    _rollback( "chlAddAVUMetadata" );
+	    if ( status == CAT_NO_ROWS_FOUND ) {
+		return ERROR( CAT_INVALID_RESOURCE, "invalid resource" );
+	    }
+	    return ERROR( status, "select resc_id failed" );
+	}
+    }
+
+    if ( itype == 4 ) {
+	if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+	    return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
+	}
+
+	status = validateAndParseUserName( _name, userName, userZone );
+	if ( status ) {
+	    return ERROR( status, "Invalid username format" );
+	}
+	if ( userZone[0] == '\0' ) {
+	    std::string zone;
+	    ret = getLocalZone( _ctx.prop_map(), &icss, zone );
+	    if ( !ret.ok() ) {
+		return PASS( ret );
+	    }
+	    snprintf( userZone, NAME_LEN, "%s", zone.c_str() );
+	}
+
+	objId = 0;
+	if ( logSQL != 0 ) {
+	    rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 6" );
+	}
+	{
+	    std::vector<std::string> bindVars;
+	    bindVars.push_back( userName );
+	    bindVars.push_back( userZone );
+	    status = cmlGetIntegerValueFromSql(
+			"select user_id from R_USER_MAIN where user_name=? and zone_name=?",
+			&objId, bindVars, &icss );
+	}
+	if ( status != 0 ) {
+	    _rollback( "chlAddAVUMetadata" );
+	    if ( status == CAT_NO_ROWS_FOUND ) {
+		return ERROR( CAT_INVALID_USER, "invalid user" );
+	    }
+	    return ERROR( status, "select user_id failed" );
+	}
+    }
+
+    if ( itype == 5 ) {
+	if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+	    return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL , "insufficient privilege" );
+	}
+
+	std::string zone;
+	ret = getLocalZone( _ctx.prop_map(), &icss, zone );
+	if ( !ret.ok() ) {
+	    return PASS( ret );
+	}
+
+	objId = 0;
+	if ( logSQL != 0 ) {
+	    rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 7" );
+	}
+	{
+	    std::vector<std::string> bindVars;
+	    bindVars.push_back( _name );
+	    status = cmlGetIntegerValueFromSql(
+			"select distinct resc_group_id from R_RESC_GROUP where resc_group_name=?",
+			&objId, bindVars, &icss );
+	}
+	if ( status != 0 ) {
+	    _rollback( "chlAddAVUMetadata" );
+	    if ( status == CAT_NO_ROWS_FOUND ) {
+		return ERROR( CAT_INVALID_RESOURCE, "invalid resource" );
+	    }
+	    return ERROR( status, "select failure" );
+	}
+    }
+
+    status = findOrInsertAVU( _attribute, _value, _units );
+    if ( status < 0 ) {
+	rodsLog( LOG_NOTICE,
+		"chlAddAVUMetadata findOrInsertAVU failure %d",
+		status );
+	_rollback( "chlAddAVUMetadata" );
+	return ERROR( status, "findOrInsertAVU failure" );
+    }
+    seqNum = status;
+
+    getNowStr( myTime );
+    snprintf( objIdStr, sizeof objIdStr, "%lld", objId );
+    snprintf( seqNumStr, sizeof seqNumStr, "%lld", seqNum );
+    cllBindVars[cllBindVarCount++] = objIdStr;
+    cllBindVars[cllBindVarCount++] = seqNumStr;
+    cllBindVars[cllBindVarCount++] = myTime;
+    cllBindVars[cllBindVarCount++] = myTime;
+    if ( logSQL != 0 ) {
+	rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 7" );
+    }
+    status =  cmlExecuteNoAnswerSql(
+		  "insert into R_OBJT_METAMAP (object_id, meta_id, create_ts, modify_ts) values (?, ?, ?, ?)",
+		  &icss );
+    if ( status != 0 ) {
+	rodsLog( LOG_NOTICE,
+		"chlAddAVUMetadata cmlExecuteNoAnswerSql insert failure %d",
+		status );
+	_rollback( "chlAddAVUMetadata" );
+	return ERROR( status, "insert failure" );
+    }
+
+
+
+    return CODE( status );
+
+
+
+} // db_add_avu_metadata_op
+
+irods::error db_add_avu_metadata_op(
+    irods::plugin_context& _ctx,
+    int                    _admin_mode,
+    const char*            _type,
+    const char*            _name,
+    const char*            _attribute,
+    const char*            _value,
+    const char*            _units ) {
+    
     std::function<irods::error()> tx = [&]() {
-
-      if ( itype == 1 ) {
-	  status = splitPathByKey( _name,
-				  logicalParentDirName, MAX_NAME_LEN, logicalEndName, MAX_NAME_LEN, '/' );
-	  if ( strlen( logicalParentDirName ) == 0 ) {
-	      snprintf( logicalParentDirName, sizeof( logicalParentDirName ), "%s", PATH_SEPARATOR );
-	      snprintf( logicalEndName, sizeof( logicalEndName ), "%s", _name );
-	  }
-	  if ( _admin_mode == 1 ) {
-	      if ( logSQL != 0 ) {
-		  rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 1 " );
-	      }
-	      {
-		  std::vector<std::string> bindVars;
-		  bindVars.push_back( logicalEndName );
-		  bindVars.push_back( logicalParentDirName );
-		  status = cmlGetIntegerValueFromSql(
-			      "select data_id from R_DATA_MAIN DM, R_COLL_MAIN CM where "
-			      "DM.data_name=? and DM.coll_id=CM.coll_id and CM.coll_name=?",
-			      &iVal, bindVars, &icss );
-	      }
-	      if ( status == 0 ) {
-		  status = iVal;    /*like cmlCheckDataObjOnly, status is objid */
-	      }
-	  }
-	  else {
-	      if ( logSQL != 0 ) {
-		  rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 2" );
-	      }
-	      status = cmlCheckDataObjOnly( logicalParentDirName, logicalEndName,
-					    _ctx.comm()->clientUser.userName,
-					    _ctx.comm()->clientUser.rodsZone,
-					    ACCESS_CREATE_METADATA, &icss );
-	  }
-	  if ( status < 0 ) {
-	      _rollback( "chlAddAVUMetadata" );
-	      return ERROR( status, "select data_id failed" );
-	  }
-	  objId = status;
-      }
-
-      if ( itype == 2 ) {
-	  if ( _admin_mode == 1 ) {
-	      if ( logSQL != 0 ) {
-		  rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 3" );
-	      }
-	      {
-		  std::vector<std::string> bindVars;
-		  bindVars.push_back( _name );
-		  status = cmlGetIntegerValueFromSql(
-			      "select coll_id from R_COLL_MAIN where coll_name=?",
-			      &iVal, bindVars, &icss );
-	      }
-	      if ( status == 0 ) {
-		  status = iVal;    /*like cmlCheckDir, status is objid*/
-	      }
-	  }
-	  else {
-	      /* Check that the collection exists and user has create_metadata
-		permission, and get the collectionID */
-	      if ( logSQL != 0 ) {
-		  rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 4" );
-	      }
-	      status = cmlCheckDir( _name,
-				    _ctx.comm()->clientUser.userName,
-				    _ctx.comm()->clientUser.rodsZone,
-				    ACCESS_CREATE_METADATA, &icss );
-	  }
-	  if ( status < 0 ) {
-	      char errMsg[105];
-	      _rollback( "chlAddAVUMetadata" );
-	      if ( status == CAT_UNKNOWN_COLLECTION ) {
-		  snprintf( errMsg, 100, "collection '%s' is unknown",
-			    _name );
-		  addRErrorMsg( &_ctx.comm()->rError, 0, errMsg );
-	      }
-	      else {
-		  _rollback( "chlAddAVUMetadata" );
-	      }
-	      return ERROR( status, "cmlCheckDir failed" );
-	  }
-	  objId = status;
-      }
-
-      if ( itype == 3 ) {
-	  if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-	      return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
-	  }
-
-	  std::string zone;
-	  ret = getLocalZone( _ctx.prop_map(), &icss, zone );
-	  if ( !ret.ok() ) {
-	      return PASS( ret );
-	  }
-
-	  objId = 0;
-	  if ( logSQL != 0 ) {
-	      rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 5" );
-	  }
-	  {
-	      std::vector<std::string> bindVars;
-	      bindVars.push_back( _name );
-	      bindVars.push_back( zone );
-	      status = cmlGetIntegerValueFromSql(
-			  "select resc_id from R_RESC_MAIN where resc_name=? and zone_name=?",
-			  &objId, bindVars, &icss );
-	  }
-	  if ( status != 0 ) {
-	      _rollback( "chlAddAVUMetadata" );
-	      if ( status == CAT_NO_ROWS_FOUND ) {
-		  return ERROR( CAT_INVALID_RESOURCE, "invalid resource" );
-	      }
-	      return ERROR( status, "select resc_id failed" );
-	  }
-      }
-
-      if ( itype == 4 ) {
-	  if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-	      return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
-	  }
-
-	  status = validateAndParseUserName( _name, userName, userZone );
-	  if ( status ) {
-	      return ERROR( status, "Invalid username format" );
-	  }
-	  if ( userZone[0] == '\0' ) {
-	      std::string zone;
-	      ret = getLocalZone( _ctx.prop_map(), &icss, zone );
-	      if ( !ret.ok() ) {
-		  return PASS( ret );
-	      }
-	      snprintf( userZone, NAME_LEN, "%s", zone.c_str() );
-	  }
-
-	  objId = 0;
-	  if ( logSQL != 0 ) {
-	      rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 6" );
-	  }
-	  {
-	      std::vector<std::string> bindVars;
-	      bindVars.push_back( userName );
-	      bindVars.push_back( userZone );
-	      status = cmlGetIntegerValueFromSql(
-			  "select user_id from R_USER_MAIN where user_name=? and zone_name=?",
-			  &objId, bindVars, &icss );
-	  }
-	  if ( status != 0 ) {
-	      _rollback( "chlAddAVUMetadata" );
-	      if ( status == CAT_NO_ROWS_FOUND ) {
-		  return ERROR( CAT_INVALID_USER, "invalid user" );
-	      }
-	      return ERROR( status, "select user_id failed" );
-	  }
-      }
-
-      if ( itype == 5 ) {
-	  if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-	      return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL , "insufficient privilege" );
-	  }
-
-	  std::string zone;
-	  ret = getLocalZone( _ctx.prop_map(), &icss, zone );
-	  if ( !ret.ok() ) {
-	      return PASS( ret );
-	  }
-
-	  objId = 0;
-	  if ( logSQL != 0 ) {
-	      rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 7" );
-	  }
-	  {
-	      std::vector<std::string> bindVars;
-	      bindVars.push_back( _name );
-	      status = cmlGetIntegerValueFromSql(
-			  "select distinct resc_group_id from R_RESC_GROUP where resc_group_name=?",
-			  &objId, bindVars, &icss );
-	  }
-	  if ( status != 0 ) {
-	      _rollback( "chlAddAVUMetadata" );
-	      if ( status == CAT_NO_ROWS_FOUND ) {
-		  return ERROR( CAT_INVALID_RESOURCE, "invalid resource" );
-	      }
-	      return ERROR( status, "select failure" );
-	  }
-      }
-
-      status = findOrInsertAVU( _attribute, _value, _units );
-      if ( status < 0 ) {
-	  rodsLog( LOG_NOTICE,
-		  "chlAddAVUMetadata findOrInsertAVU failure %d",
-		  status );
-	  _rollback( "chlAddAVUMetadata" );
-	  return ERROR( status, "findOrInsertAVU failure" );
-      }
-      seqNum = status;
-
-      getNowStr( myTime );
-      snprintf( objIdStr, sizeof objIdStr, "%lld", objId );
-      snprintf( seqNumStr, sizeof seqNumStr, "%lld", seqNum );
-      cllBindVars[cllBindVarCount++] = objIdStr;
-      cllBindVars[cllBindVarCount++] = seqNumStr;
-      cllBindVars[cllBindVarCount++] = myTime;
-      cllBindVars[cllBindVarCount++] = myTime;
-      if ( logSQL != 0 ) {
-	  rodsLog( LOG_SQL, "chlAddAVUMetadata SQL 7" );
-      }
-      status =  cmlExecuteNoAnswerSql(
-		    "insert into R_OBJT_METAMAP (object_id, meta_id, create_ts, modify_ts) values (?, ?, ?, ?)",
-		    &icss );
-      if ( status != 0 ) {
-	  rodsLog( LOG_NOTICE,
-		  "chlAddAVUMetadata cmlExecuteNoAnswerSql insert failure %d",
-		  status );
-	  _rollback( "chlAddAVUMetadata" );
-	  return ERROR( status, "insert failure" );
-      }
-
-
-
-      return CODE( status );
+      return _add_avu_metadata(_ctx, _admin_mode, _type, _name, _attribute, _value, _units);
 
     };
     return execTx( &icss, tx );
@@ -9427,8 +9459,8 @@ irods::error db_mod_avu_metadata_op(
         snprintf( myUnits, sizeof( myUnits ), "%s", _unitsOrArg0 );
     }
 
-    status = chlDeleteAVUMetadata( _ctx.comm(), 0, _type, _name, _attribute, _value,
-                                   myUnits, 1 );
+    status = _del_avu_metadata( _ctx, 0, _type, _name, _attribute, _value,
+                                   myUnits, 1 ).code();
     if ( status != 0 ) {
         _rollback( "chlModAVUMetadata" );
         return ERROR( status, "delete avu metadata failed" );
@@ -9495,13 +9527,13 @@ irods::error db_mod_avu_metadata_op(
         addUnits = myUnits;
     }
 
-    status = chlAddAVUMetadata( _ctx.comm(), 0, _type, _name, addAttr, addValue,
-                                addUnits );
+    status = _add_avu_metadata( _ctx, 0, _type, _name, addAttr, addValue,
+                                addUnits ).code();
     return CODE( status );
 
 } // db_mod_avu_metadata_op
 
-irods::error db_del_avu_metadata_op(
+irods::error _del_avu_metadata(
     irods::plugin_context& _ctx,
     int                    _option,
     const char*            _type,
@@ -9514,16 +9546,16 @@ irods::error db_del_avu_metadata_op(
     // check the context
     irods::error ret = _ctx.valid();
     if ( !ret.ok() ) {
-        return PASS( ret );
+	return PASS( ret );
     }
 
     // =-=-=-=-=-=-=-
     // check the params
     if (
-        !_type   ||
-        !_name   ||
-        !_attribute ) {
-        return ERROR( CAT_INVALID_ARGUMENT, "null parameter" );
+	!_type   ||
+	!_name   ||
+	!_attribute ) {
+	return ERROR( CAT_INVALID_ARGUMENT, "null parameter" );
 
     }
 
@@ -9532,7 +9564,7 @@ irods::error db_del_avu_metadata_op(
     /*irods::postgres_object_ptr pg;
     ret = make_db_ptr( _ctx.fco(), pg );
     if ( !ret.ok() ) {
-        return PASS( ret );
+	return PASS( ret );
 
     }*/
 
@@ -9551,283 +9583,299 @@ irods::error db_del_avu_metadata_op(
     char userZone[NAME_LEN];
 
     if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlDeleteAVUMetadata" );
+	rodsLog( LOG_SQL, "chlDeleteAVUMetadata" );
     }
 
     if ( !icss.status ) {
-        return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
+	return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
     }
 
     if ( _type == NULL || *_type == '\0' ) {
-        return ERROR( CAT_INVALID_ARGUMENT, "invalid type" );
+	return ERROR( CAT_INVALID_ARGUMENT, "invalid type" );
     }
 
     if ( _name == NULL || *_name == '\0' ) {
-        return ERROR( CAT_INVALID_ARGUMENT, "invalid name" );
+	return ERROR( CAT_INVALID_ARGUMENT, "invalid name" );
     }
     if ( _option != 2 ) {
-        if ( _attribute == NULL || *_attribute == '\0' ) {
-            return ERROR( CAT_INVALID_ARGUMENT, "invalid attribute" );
-        }
+	if ( _attribute == NULL || *_attribute == '\0' ) {
+	    return ERROR( CAT_INVALID_ARGUMENT, "invalid attribute" );
+	}
 
-        if ( _value == NULL || *_value == '\0' ) {
-            return ERROR( CAT_INVALID_ARGUMENT, "invalid value" );
-        }
+	if ( _value == NULL || *_value == '\0' ) {
+	    return ERROR( CAT_INVALID_ARGUMENT, "invalid value" );
+	}
     }
 
     if ( _unit == NULL ) {
-        _unit = "";
+	_unit = "";
     }
 
     itype = convertTypeOption( _type );
     if ( itype == 0 ) {
-        return ERROR( CAT_INVALID_ARGUMENT, "invalid type" );
+	return ERROR( CAT_INVALID_ARGUMENT, "invalid type" );
     }
+
+    if ( itype == 1 ) {
+	status = splitPathByKey( _name,
+				logicalParentDirName, MAX_NAME_LEN, logicalEndName, MAX_NAME_LEN, '/' );
+	if ( strlen( logicalParentDirName ) == 0 ) {
+	    snprintf( logicalParentDirName, sizeof( logicalParentDirName ), "%s", PATH_SEPARATOR );
+	    snprintf( logicalEndName, sizeof( logicalEndName ), "%s", _name );
+	}
+	if ( logSQL != 0 ) {
+	    rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 1 " );
+	}
+	status = cmlCheckDataObjOnly( logicalParentDirName, logicalEndName,
+				      _ctx.comm()->clientUser.userName,
+				      _ctx.comm()->clientUser.rodsZone,
+				      ACCESS_DELETE_METADATA, &icss );
+	if ( status < 0 ) {
+	    // if ( _nocommit != 1 ) {
+// 		_rollback( "chlDeleteAVUMetadata" );
+	    // }
+	    return ERROR( status, "delete avu failed" );
+	}
+	objId = status;
+    }
+
+    if ( itype == 2 ) {
+	/* Check that the collection exists and user has delete_metadata permission,
+	  and get the collectionID */
+	if ( logSQL != 0 ) {
+	    rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 2" );
+	}
+	status = cmlCheckDir( _name,
+			      _ctx.comm()->clientUser.userName,
+			      _ctx.comm()->clientUser.rodsZone,
+			      ACCESS_DELETE_METADATA, &icss );
+	if ( status < 0 ) {
+	    char errMsg[105];
+	    if ( status == CAT_UNKNOWN_COLLECTION ) {
+		snprintf( errMsg, 100, "collection '%s' is unknown",
+			  _name );
+		addRErrorMsg( &_ctx.comm()->rError, 0, errMsg );
+	    }
+	    return ERROR( status, "cmlCheckDir failed" );
+	}
+	objId = status;
+    }
+
+    if ( itype == 3 ) {
+	if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+	    return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
+	}
+
+	std::string zone;
+	ret = getLocalZone( _ctx.prop_map(), &icss, zone );
+	if ( !ret.ok() ) {
+	    return PASS( ret );
+	}
+
+	objId = 0;
+	if ( logSQL != 0 ) {
+	    rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 3" );
+	}
+	{
+	    std::vector<std::string> bindVars;
+	    bindVars.push_back( _name );
+	    bindVars.push_back( zone );
+	    status = cmlGetIntegerValueFromSql(
+			"select resc_id from R_RESC_MAIN where resc_name=? and zone_name=?",
+			&objId, bindVars, &icss );
+	}
+	if ( status != 0 ) {
+	    if ( status == CAT_NO_ROWS_FOUND ) {
+		return ERROR( CAT_INVALID_RESOURCE, "invalid resource" );
+	    }
+	    // if ( _nocommit != 1 ) {
+		_rollback( "chlDeleteAVUMetadata" );
+	    // }
+	    return ERROR( status, "select resc_id failed" );
+	}
+    }
+
+    if ( itype == 4 ) {
+	if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+	    return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
+	}
+
+	status = validateAndParseUserName( _name, userName, userZone );
+	if ( status ) {
+	    return ERROR( status, "Invalid username format" );
+	}
+	if ( userZone[0] == '\0' ) {
+	    std::string zone;
+	    ret = getLocalZone( _ctx.prop_map(), &icss, zone );
+	    if ( !ret.ok() ) {
+		return PASS( ret );
+	    }
+	    snprintf( userZone, sizeof( userZone ), "%s", zone.c_str() );
+	}
+
+	objId = 0;
+	if ( logSQL != 0 ) {
+	    rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 4" );
+	}
+	{
+	    std::vector<std::string> bindVars;
+	    bindVars.push_back( userName );
+	    bindVars.push_back( userZone );
+	    status = cmlGetIntegerValueFromSql(
+			"select user_id from R_USER_MAIN where user_name=? and zone_name=?",
+			&objId, bindVars, &icss );
+	}
+	if ( status != 0 ) {
+	    if ( status == CAT_NO_ROWS_FOUND ) {
+		return ERROR( CAT_INVALID_USER, "invalid user" );
+	    }
+	    // if ( _nocommit != 1 ) {
+		_rollback( "chlDeleteAVUMetadata" );
+	    // }
+	    return ERROR( status, "select user_id failed" );
+	}
+    }
+
+    if ( itype == 5 ) {
+	if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+	    return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
+	}
+
+	std::string zone;
+	ret = getLocalZone( _ctx.prop_map(), &icss, zone );
+	if ( !ret.ok() ) {
+	    return PASS( ret );
+	}
+
+	objId = 0;
+	if ( logSQL != 0 ) {
+	    rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 5" );
+	}
+	{
+	    std::vector<std::string> bindVars;
+	    bindVars.push_back( _name );
+	    status = cmlGetIntegerValueFromSql(
+			"select resc_group_id from R_RESC_GROUP where resc_group_name=?",
+			&objId, bindVars, &icss );
+	}
+	if ( status != 0 ) {
+	    if ( status == CAT_NO_ROWS_FOUND ) {
+		return ERROR( CAT_INVALID_RESOURCE, "invalid resource" );
+	    }
+	    // if ( _nocommit != 1 ) {
+		_rollback( "chlDeleteAVUMetadata" );
+	    // }
+	    return ERROR( status, "select failure" );
+	}
+    }
+
+
+    snprintf( objIdStr, MAX_NAME_LEN, "%lld", objId );
+    if ( _option == 2 ) {
+	cllBindVars[cllBindVarCount++] = objIdStr;
+	cllBindVars[cllBindVarCount++] = _attribute; /* attribute is really id */
+
+	if ( logSQL != 0 ) {
+	    rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 9" );
+	}
+	status =  cmlExecuteNoAnswerSql(
+		      "delete from R_OBJT_METAMAP where object_id=? and meta_id =?",
+		      &icss );
+	if ( status != 0 ) {
+	    rodsLog( LOG_NOTICE,
+		    "chlDeleteAVUMetadata cmlExecuteNoAnswerSql delete failure %d",
+		    status );
+	    // if ( _nocommit != 1 ) {
+		_rollback( "chlDeleteAVUMetadata" );
+	    // }
+
+	    return ERROR( status, "delete failure" );
+	}
+
+
+
+	return SUCCESS();
+    }
+
+    cllBindVars[cllBindVarCount++] = objIdStr;
+    cllBindVars[cllBindVarCount++] = _attribute;
+    cllBindVars[cllBindVarCount++] = _value;
+    cllBindVars[cllBindVarCount++] = _unit;
+
+    allowNullUnits = 0;
+    if ( *_unit == '\0' ) {
+	allowNullUnits = 1; /* null or empty-string units */
+    }
+    if ( _option == 1 && *_unit == '%' && *( _unit + 1 ) == '\0' ) {
+	allowNullUnits = 1; /* wildcard and just % */
+    }
+
+    if ( allowNullUnits ) {
+	if ( _option == 1 ) { /* use wildcards ('like') */
+	    if ( logSQL != 0 ) {
+		rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 5" );
+	    }
+	    status =  cmlExecuteNoAnswerSql(
+			  "delete from R_OBJT_METAMAP where object_id=? and meta_id IN (select meta_id from R_META_MAIN where meta_attr_name like ? and meta_attr_value like ? and (meta_attr_unit like ? or meta_attr_unit IS NULL) )",
+			  &icss );
+	}
+	else {
+	    if ( logSQL != 0 ) {
+		rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 6" );
+	    }
+	    status =  cmlExecuteNoAnswerSql(
+			  "delete from R_OBJT_METAMAP where object_id=? and meta_id IN (select meta_id from R_META_MAIN where meta_attr_name = ? and meta_attr_value = ? and (meta_attr_unit = ? or meta_attr_unit IS NULL) )",
+			  &icss );
+	}
+    }
+    else {
+	if ( _option == 1 ) { /* use wildcards ('like') */
+	    if ( logSQL != 0 ) {
+		rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 7" );
+	    }
+	    status =  cmlExecuteNoAnswerSql(
+			  "delete from R_OBJT_METAMAP where object_id=? and meta_id IN (select meta_id from R_META_MAIN where meta_attr_name like ? and meta_attr_value like ? and meta_attr_unit like ?)",
+			  &icss );
+	}
+	else {
+	    if ( logSQL != 0 ) {
+		rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 8" );
+	    }
+	    status =  cmlExecuteNoAnswerSql(
+			  "delete from R_OBJT_METAMAP where object_id=? and meta_id IN (select meta_id from R_META_MAIN where meta_attr_name = ? and meta_attr_value = ? and meta_attr_unit = ?)",
+			  &icss );
+	}
+    }
+    if ( status != 0 ) {
+	rodsLog( LOG_NOTICE,
+		"chlDeleteAVUMetadata cmlExecuteNoAnswerSql delete failure %d",
+		status );
+	// if ( _nocommit != 1 ) {
+	    _rollback( "chlDeleteAVUMetadata" );
+	// }
+	return ERROR( status, "delete failure" );
+    }
+
+
+
+    return CODE( status );
+
+
+
+} // db_del_avu_metadata_op
+
+irods::error db_del_avu_metadata_op(
+    irods::plugin_context& _ctx,
+    int                    _option,
+    const char*            _type,
+    const char*            _name,
+    const char*            _attribute,
+    const char*            _value,
+    const char*            _unit,
+    int                    _nocommit ) {
     std::function<irods::error()> tx = [&]() -> irods::error {
 
-      if ( itype == 1 ) {
-	  status = splitPathByKey( _name,
-				  logicalParentDirName, MAX_NAME_LEN, logicalEndName, MAX_NAME_LEN, '/' );
-	  if ( strlen( logicalParentDirName ) == 0 ) {
-	      snprintf( logicalParentDirName, sizeof( logicalParentDirName ), "%s", PATH_SEPARATOR );
-	      snprintf( logicalEndName, sizeof( logicalEndName ), "%s", _name );
-	  }
-	  if ( logSQL != 0 ) {
-	      rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 1 " );
-	  }
-	  status = cmlCheckDataObjOnly( logicalParentDirName, logicalEndName,
-					_ctx.comm()->clientUser.userName,
-					_ctx.comm()->clientUser.rodsZone,
-					ACCESS_DELETE_METADATA, &icss );
-	  if ( status < 0 ) {
-	      // if ( _nocommit != 1 ) {
-		  _rollback( "chlDeleteAVUMetadata" );
-	      // }
-	      return ERROR( status, "delete avu failed" );
-	  }
-	  objId = status;
-      }
-
-      if ( itype == 2 ) {
-	  /* Check that the collection exists and user has delete_metadata permission,
-	    and get the collectionID */
-	  if ( logSQL != 0 ) {
-	      rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 2" );
-	  }
-	  status = cmlCheckDir( _name,
-				_ctx.comm()->clientUser.userName,
-				_ctx.comm()->clientUser.rodsZone,
-				ACCESS_DELETE_METADATA, &icss );
-	  if ( status < 0 ) {
-	      char errMsg[105];
-	      if ( status == CAT_UNKNOWN_COLLECTION ) {
-		  snprintf( errMsg, 100, "collection '%s' is unknown",
-			    _name );
-		  addRErrorMsg( &_ctx.comm()->rError, 0, errMsg );
-	      }
-	      return ERROR( status, "cmlCheckDir failed" );
-	  }
-	  objId = status;
-      }
-
-      if ( itype == 3 ) {
-	  if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-	      return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
-	  }
-
-	  std::string zone;
-	  ret = getLocalZone( _ctx.prop_map(), &icss, zone );
-	  if ( !ret.ok() ) {
-	      return PASS( ret );
-	  }
-
-	  objId = 0;
-	  if ( logSQL != 0 ) {
-	      rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 3" );
-	  }
-	  {
-	      std::vector<std::string> bindVars;
-	      bindVars.push_back( _name );
-	      bindVars.push_back( zone );
-	      status = cmlGetIntegerValueFromSql(
-			  "select resc_id from R_RESC_MAIN where resc_name=? and zone_name=?",
-			  &objId, bindVars, &icss );
-	  }
-	  if ( status != 0 ) {
-	      if ( status == CAT_NO_ROWS_FOUND ) {
-		  return ERROR( CAT_INVALID_RESOURCE, "invalid resource" );
-	      }
-	      // if ( _nocommit != 1 ) {
-		  _rollback( "chlDeleteAVUMetadata" );
-	      // }
-	      return ERROR( status, "select resc_id failed" );
-	  }
-      }
-
-      if ( itype == 4 ) {
-	  if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-	      return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
-	  }
-
-	  status = validateAndParseUserName( _name, userName, userZone );
-	  if ( status ) {
-	      return ERROR( status, "Invalid username format" );
-	  }
-	  if ( userZone[0] == '\0' ) {
-	      std::string zone;
-	      ret = getLocalZone( _ctx.prop_map(), &icss, zone );
-	      if ( !ret.ok() ) {
-		  return PASS( ret );
-	      }
-	      snprintf( userZone, sizeof( userZone ), "%s", zone.c_str() );
-	  }
-
-	  objId = 0;
-	  if ( logSQL != 0 ) {
-	      rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 4" );
-	  }
-	  {
-	      std::vector<std::string> bindVars;
-	      bindVars.push_back( userName );
-	      bindVars.push_back( userZone );
-	      status = cmlGetIntegerValueFromSql(
-			  "select user_id from R_USER_MAIN where user_name=? and zone_name=?",
-			  &objId, bindVars, &icss );
-	  }
-	  if ( status != 0 ) {
-	      if ( status == CAT_NO_ROWS_FOUND ) {
-		  return ERROR( CAT_INVALID_USER, "invalid user" );
-	      }
-	      // if ( _nocommit != 1 ) {
-		  _rollback( "chlDeleteAVUMetadata" );
-	      // }
-	      return ERROR( status, "select user_id failed" );
-	  }
-      }
-
-      if ( itype == 5 ) {
-	  if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-	      return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
-	  }
-
-	  std::string zone;
-	  ret = getLocalZone( _ctx.prop_map(), &icss, zone );
-	  if ( !ret.ok() ) {
-	      return PASS( ret );
-	  }
-
-	  objId = 0;
-	  if ( logSQL != 0 ) {
-	      rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 5" );
-	  }
-	  {
-	      std::vector<std::string> bindVars;
-	      bindVars.push_back( _name );
-	      status = cmlGetIntegerValueFromSql(
-			  "select resc_group_id from R_RESC_GROUP where resc_group_name=?",
-			  &objId, bindVars, &icss );
-	  }
-	  if ( status != 0 ) {
-	      if ( status == CAT_NO_ROWS_FOUND ) {
-		  return ERROR( CAT_INVALID_RESOURCE, "invalid resource" );
-	      }
-	      // if ( _nocommit != 1 ) {
-		  _rollback( "chlDeleteAVUMetadata" );
-	      // }
-	      return ERROR( status, "select failure" );
-	  }
-      }
-
-
-      snprintf( objIdStr, MAX_NAME_LEN, "%lld", objId );
-      if ( _option == 2 ) {
-	  cllBindVars[cllBindVarCount++] = objIdStr;
-	  cllBindVars[cllBindVarCount++] = _attribute; /* attribute is really id */
-
-	  if ( logSQL != 0 ) {
-	      rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 9" );
-	  }
-	  status =  cmlExecuteNoAnswerSql(
-			"delete from R_OBJT_METAMAP where object_id=? and meta_id =?",
-			&icss );
-	  if ( status != 0 ) {
-	      rodsLog( LOG_NOTICE,
-		      "chlDeleteAVUMetadata cmlExecuteNoAnswerSql delete failure %d",
-		      status );
-	      // if ( _nocommit != 1 ) {
-		  _rollback( "chlDeleteAVUMetadata" );
-	      // }
-
-	      return ERROR( status, "delete failure" );
-	  }
-
-
-
-	  return SUCCESS();
-      }
-
-      cllBindVars[cllBindVarCount++] = objIdStr;
-      cllBindVars[cllBindVarCount++] = _attribute;
-      cllBindVars[cllBindVarCount++] = _value;
-      cllBindVars[cllBindVarCount++] = _unit;
-
-      allowNullUnits = 0;
-      if ( *_unit == '\0' ) {
-	  allowNullUnits = 1; /* null or empty-string units */
-      }
-      if ( _option == 1 && *_unit == '%' && *( _unit + 1 ) == '\0' ) {
-	  allowNullUnits = 1; /* wildcard and just % */
-      }
-
-      if ( allowNullUnits ) {
-	  if ( _option == 1 ) { /* use wildcards ('like') */
-	      if ( logSQL != 0 ) {
-		  rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 5" );
-	      }
-	      status =  cmlExecuteNoAnswerSql(
-			    "delete from R_OBJT_METAMAP where object_id=? and meta_id IN (select meta_id from R_META_MAIN where meta_attr_name like ? and meta_attr_value like ? and (meta_attr_unit like ? or meta_attr_unit IS NULL) )",
-			    &icss );
-	  }
-	  else {
-	      if ( logSQL != 0 ) {
-		  rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 6" );
-	      }
-	      status =  cmlExecuteNoAnswerSql(
-			    "delete from R_OBJT_METAMAP where object_id=? and meta_id IN (select meta_id from R_META_MAIN where meta_attr_name = ? and meta_attr_value = ? and (meta_attr_unit = ? or meta_attr_unit IS NULL) )",
-			    &icss );
-	  }
-      }
-      else {
-	  if ( _option == 1 ) { /* use wildcards ('like') */
-	      if ( logSQL != 0 ) {
-		  rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 7" );
-	      }
-	      status =  cmlExecuteNoAnswerSql(
-			    "delete from R_OBJT_METAMAP where object_id=? and meta_id IN (select meta_id from R_META_MAIN where meta_attr_name like ? and meta_attr_value like ? and meta_attr_unit like ?)",
-			    &icss );
-	  }
-	  else {
-	      if ( logSQL != 0 ) {
-		  rodsLog( LOG_SQL, "chlDeleteAVUMetadata SQL 8" );
-	      }
-	      status =  cmlExecuteNoAnswerSql(
-			    "delete from R_OBJT_METAMAP where object_id=? and meta_id IN (select meta_id from R_META_MAIN where meta_attr_name = ? and meta_attr_value = ? and meta_attr_unit = ?)",
-			    &icss );
-	  }
-      }
-      if ( status != 0 ) {
-	  rodsLog( LOG_NOTICE,
-		  "chlDeleteAVUMetadata cmlExecuteNoAnswerSql delete failure %d",
-		  status );
-	  // if ( _nocommit != 1 ) {
-	      _rollback( "chlDeleteAVUMetadata" );
-	  // }
-	  return ERROR( status, "delete failure" );
-      }
-
-
-
-      return CODE( status );
+      return _del_avu_metadata(_ctx, _option, _type, _name, _attribute, _value, _unit, _nocommit);
 
     };
     // if ( _nocommit != 1 ) {

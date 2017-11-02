@@ -10365,7 +10365,11 @@ irods::error db_mod_access_control_op(
       /* Doing inheritance */
       if ( inheritFlag != 0 ) {
 	  rodsLong_t status = _modInheritance( inheritFlag, _recursive_flag, collIdStr, _path_name );
-	  return ERROR( status, "_modInheritance failed" );
+    if(status < 0) {
+      return ERROR( status, "_modInheritance failed" );
+    } else {
+      return SUCCESS();
+    }
       }
 
       /* Check that the receiving user exists and if so get the userId */

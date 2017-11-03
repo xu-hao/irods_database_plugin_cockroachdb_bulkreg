@@ -50,6 +50,8 @@
 #include "irods_lexical_cast.hpp"
 #include "low_level.hpp"
 #include <boost/scope_exit.hpp>
+#include "irods_database_plugin_cockroachdb_constants.hpp"
+#include "irods_database_plugin_cockroachdb_structs.hpp"
 
 using leaf_bundle_t = irods::resource_manager::leaf_bundle_t;
 extern irods::resource_manager resc_mgr;
@@ -77,7 +79,15 @@ irods::error _del_avu_metadata(
     const char*            _value,
     const char*            _unit,
     int                    _nocommit );
-
+irods::error _move_object(
+    irods::plugin_context& _ctx,
+    rodsLong_t             _obj_id,
+    rodsLong_t             _target_coll_id );
+irods::error _rename_object(
+    irods::plugin_context& _ctx,
+    rodsLong_t             _obj_id,
+    const char*            _new_name );
+    
 //   Legal values for accessLevel in  chlModAccessControl (Access Parameter).
 //   Defined here since other code does not need them (except for help messages)
 #define AP_READ "read"
@@ -5380,12 +5390,11 @@ irods::error db_rename_coll_op(
     }
 
     /* call chlRenameObject to rename */
-    status1 = chlRenameObject( _ctx.comm(), status1, _new_coll );
-    if ( !status1 ) {
-        return ERROR( status1, "chlRenameObject failed" );
-    }
-
-    return CODE( status1 );
+    std::function<irods::error()> tx = [&] () {
+        return _rename_object( _ctx, status1, _new_coll );
+    };
+    
+    return execTx(&icss, tx);
 
 } // db_rename_coll_op
 
@@ -10592,6 +10601,19 @@ irods::error db_rename_object_op(
     }
 
   std::function<irods::error()> tx = [&]() {
+      return _rename_object(_ctx, _obj_id, _new_name);
+    
+  };
+  return execTx( &icss, tx );
+
+
+
+} // db_rename_object_op
+
+irods::error _rename_object(
+    irods::plugin_context& _ctx,
+    rodsLong_t             _obj_id,
+    const char*            _new_name ) {
     // =-=-=-=-=-=-=-
     // get a postgres object from the context
     /*irods::postgres_object_ptr pg;
@@ -10817,6 +10839,51 @@ irods::error db_rename_object_op(
         if ( isRootDir ) {
             snprintf( slashNewName, MAX_NAME_LEN, "%s", _new_name );
         }
+        
+//        result_set *resset;
+//        std::vector<std::string> bindVars{collNameSlashLen, collNameSlash, collName};
+//        status = execSql(&icss, &resset, "select coll_id, parent_coll_name, coll_name from r_coll_main where substr(parent_coll_name,1,?) = ? or parent_coll_name = ?", bindVars);
+//        if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+//            status = 0;
+//        } 
+//        if ( status != 0 ) {
+//            rodsLog( LOG_NOTICE,
+//                     "chlMoveObject cmlExecuteNoAnswerSql update failure %d",
+//                     status );
+//            _rollback( "chlMoveObject" );
+//            return ERROR( status, "cmlExecuteNoAnswerSql update failure" );
+//        }
+//        while(resset->has_row()) {
+//            const char* coll_id = resset->get_value(0);
+//            const char* parent_coll_name = resset->get_value(1);
+//            const char* coll_name = resset->get_value(2);
+//            std::vector<std::string> bindVars{parent_coll_name, pLenStr, slashNewName, parent_coll_name, cLenStr, coll_name, pLenStr, slashNewName, coll_name, cLenStr, coll_id};
+//            
+//            status = execSql(&icss, &resset, "update R_COLL_MAIN set parent_coll_name = substr(? :: text,1,? :: integer) || ? || substr(? :: text, ? :: integer), coll_name = substr(? :: text,1,? :: integer) || ? || substr(? :: text, ? :: integer) where coll_id = ?", bindVars);
+//            if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+//                status = 0;
+//            } 
+//            if ( status != 0 ) {
+//                rodsLog( LOG_NOTICE,
+//                         "chlMoveObject cmlExecuteNoAnswerSql update failure %d",
+//                         status );
+//                _rollback( "chlMoveObject" );
+//                return ERROR( status, "cmlExecuteNoAnswerSql update failure" );
+//            }
+//            status = resset->next_row();
+//            if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+//                status = 0;
+//            } 
+//            if ( status != 0 ) {
+//                rodsLog( LOG_NOTICE,
+//                         "chlMoveObject cmlExecuteNoAnswerSql update failure %d",
+//                         status );
+//                _rollback( "chlMoveObject" );
+//                return ERROR( status, "cmlExecuteNoAnswerSql update failure" );
+//            }
+//
+//        }
+// cockroach seem to not process this correctly
         cllBindVars[cllBindVarCount++] = pLenStr;
         cllBindVars[cllBindVarCount++] = slashNewName;
         cllBindVars[cllBindVarCount++] = cLenStr;
@@ -10827,7 +10894,7 @@ irods::error db_rename_object_op(
             rodsLog( LOG_SQL, "chlRenameObject SQL 9" );
         }
         status =  cmlExecuteNoAnswerSql(
-                      "update R_COLL_MAIN set coll_name = substr(coll_name,1,?) || ? || substr(coll_name, ?) where substr(parent_coll_name,1,?) = ? or parent_coll_name  = ?",
+                      "update R_COLL_MAIN set coll_name = substr(coll_name,1,? :: integer) || ? || substr(coll_name, ? :: integer) where substr(parent_coll_name,1,? :: integer) = ? or parent_coll_name  = ?",
                       &icss );
         if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
             rodsLog( LOG_NOTICE,
@@ -10848,7 +10915,7 @@ irods::error db_rename_object_op(
             rodsLog( LOG_SQL, "chlRenameObject SQL 10" );
         }
         status =  cmlExecuteNoAnswerSql(
-                      "update R_COLL_MAIN set parent_coll_name = substr(parent_coll_name,1,?) || ? || substr(parent_coll_name, ?) where substr(parent_coll_name,1,?) = ? or parent_coll_name  = ?",
+                      "update R_COLL_MAIN set parent_coll_name = substr(parent_coll_name,1,? :: integer) || ? || substr(parent_coll_name, ? :: integer) where substr(parent_coll_name,1,? :: integer) = ? or parent_coll_name  = ?",
                       &icss );
         if ( status != 0 && status != CAT_SUCCESS_BUT_WITH_NO_INFO ) {
             rodsLog( LOG_NOTICE,
@@ -10924,36 +10991,15 @@ irods::error db_rename_object_op(
 
     return ERROR( CAT_NOT_A_DATAOBJ_AND_NOT_A_COLLECTION, "not a collection" );
 
-  };
-  return execTx( &icss, tx );
 
 
 
 } // db_rename_object_op
 
-irods::error db_move_object_op(
+irods::error _move_object(
     irods::plugin_context& _ctx,
     rodsLong_t             _obj_id,
     rodsLong_t             _target_coll_id ) {
-    // check the context
-    irods::error ret = _ctx.valid();
-    if ( !ret.ok() ) {
-        return PASS( ret );
-    }
-
-    // =-=-=-=-=-=-=-
-    // get a postgres object from the context
-    /*irods::postgres_object_ptr pg;
-    ret = make_db_ptr( _ctx.fco(), pg );
-    if ( !ret.ok() ) {
-        return PASS( ret );
-
-    }*/
-
-    // =-=-=-=-=-=-=-
-    // extract the icss property
-//        icatSessionStruct icss;
-//        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
     rodsLong_t status;
     rodsLong_t collId;
     rodsLong_t otherDataId;
@@ -11018,6 +11064,7 @@ irods::error db_move_object_op(
                          "select coll_id from R_COLL_MAIN where coll_id=?",
                          &collId, bindVars, &icss );
         }
+        _rollback("_move_object");
         if ( status == 0 ) {
             return  ERROR( CAT_NO_ACCESS_PERMISSION, "permission error" );  /* does exist, must be
                                                    permission error */
@@ -11058,6 +11105,7 @@ irods::error db_move_object_op(
                          &otherDataId, bindVars, &icss );
         }
         if ( status != CAT_NO_ROWS_FOUND ) {
+            _rollback("_move_object");
             return ERROR( CAT_NAME_EXISTS_AS_DATAOBJ, "select data_id failed" );
         }
 
@@ -11077,6 +11125,7 @@ irods::error db_move_object_op(
                          &otherCollId, bindVars, &icss );
         }
         if ( status != CAT_NO_ROWS_FOUND ) {
+            _rollback("_move_object");
             return ERROR( CAT_NAME_EXISTS_AS_COLLECTION, "select coll_id failed" );
         }
 
@@ -11146,6 +11195,7 @@ irods::error db_move_object_op(
 
         ocLen = strlen( oldCollName );
         if ( pLen <= 0 || ocLen <= 0 ) {
+            _rollback("_move_object");
             return ERROR( CAT_INVALID_ARGUMENT, "parent or coll name null" );
         }  /* invalid
                                                                     argument is not really the right error code, but something
@@ -11159,6 +11209,7 @@ irods::error db_move_object_op(
             }
         }
         if ( OK == 0 ) {
+            _rollback("_move_object");
             return ERROR( CAT_INVALID_ARGUMENT, "OK == 0" );    /* not really, but...*/
         }
 
@@ -11170,6 +11221,7 @@ irods::error db_move_object_op(
                               _ctx.comm()->clientUser.rodsZone,
                               ACCESS_MODIFY_OBJECT, &icss );
         if ( status < 0 ) {
+            _rollback("_move_object");
             return ERROR( status, "cmlCheckDir failed" );
         }
 
@@ -11188,6 +11240,7 @@ irods::error db_move_object_op(
                          &otherDataId, bindVars, &icss );
         }
         if ( status != CAT_NO_ROWS_FOUND ) {
+            _rollback("_move_object");
             return ERROR( CAT_NAME_EXISTS_AS_DATAOBJ, "select data_id failed" );
         }
 
@@ -11208,6 +11261,7 @@ irods::error db_move_object_op(
                          &otherCollId, bindVars, &icss );
         }
         if ( status != CAT_NO_ROWS_FOUND ) {
+            _rollback("_move_object");
             return ERROR( CAT_NAME_EXISTS_AS_COLLECTION, "select coll_id failed" );
         }
 
@@ -11218,6 +11272,7 @@ irods::error db_move_object_op(
         if ( cp == targetCollName &&
                 ( targetCollName[strlen( oldCollName )] == '/' ||
                   targetCollName[strlen( oldCollName )] == '\0' ) ) {
+            _rollback("_move_object");
             return ERROR( CAT_RECURSIVE_MOVE, "moving coll into own subtree" );
         }
 
@@ -11254,6 +11309,53 @@ irods::error db_move_object_op(
         snprintf( collNameSlash, MAX_NAME_LEN, "%s/", oldCollName );
         len = strlen( collNameSlash );
         snprintf( collNameSlashLen, 10, "%d", len );
+        
+        /* result_set *resset;
+        std::vector<std::string> bindVars{collNameSlashLen, collNameSlash, oldCollName};
+        status = execSql(&icss, &resset, "select coll_id, parent_coll_name, coll_name from r_coll_main where substr(parent_coll_name,1,?) = ? or parent_coll_name = ?", bindVars);
+        if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+            status = 0;
+        } 
+        if ( status != 0 ) {
+            rodsLog( LOG_NOTICE,
+                     "chlMoveObject cmlExecuteNoAnswerSql update failure %d",
+                     status );
+            _rollback( "chlMoveObject" );
+            return ERROR( status, "cmlExecuteNoAnswerSql update failure" );
+        }
+        
+        while(resset->has_row()) {
+            const char* coll_id = resset->get_value(0);
+            const char* parent_coll_name = resset->get_value(1);
+            const char* coll_name = resset->get_value(2);
+            std::vector<std::string> bindVars{newCollName, parent_coll_name, ocLenStr, newCollName, coll_name, ocLenStr,coll_id};
+            
+            status = execSql(&icss, &resset, "update R_COLL_MAIN set parent_coll_name = ? || substr(? :: text, ? :: integer), coll_name = ? || substr(? :: text, ? :: integer) where coll_id = ?", bindVars);
+            if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                status = 0;
+            } 
+            if ( status != 0 ) {
+                rodsLog( LOG_NOTICE,
+                         "chlMoveObject cmlExecuteNoAnswerSql update failure %d",
+                         status );
+                _rollback( "chlMoveObject" );
+                return ERROR( status, "cmlExecuteNoAnswerSql update failure" );
+            }
+            status = resset->next_row();
+            if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
+                status = 0;
+            } 
+            if ( status != 0 ) {
+                rodsLog( LOG_NOTICE,
+                         "chlMoveObject cmlExecuteNoAnswerSql update failure %d",
+                         status );
+                _rollback( "chlMoveObject" );
+                return ERROR( status, "cmlExecuteNoAnswerSql update failure" );
+            }
+
+        }*/
+        
+        // cockroach seem to not process this correctly
         cllBindVars[cllBindVarCount++] = newCollName;
         cllBindVars[cllBindVarCount++] = ocLenStr;
         cllBindVars[cllBindVarCount++] = newCollName;
@@ -11265,11 +11367,11 @@ irods::error db_move_object_op(
             rodsLog( LOG_SQL, "chlMoveObject SQL 13" );
         }
         status =  cmlExecuteNoAnswerSql(
-                      "update R_COLL_MAIN set parent_coll_name = ? || substr(parent_coll_name, ?), coll_name = ? || substr(coll_name, ?) where substr(parent_coll_name,1,?) = ? or parent_coll_name = ?",
-                      &icss );
+                      "update R_COLL_MAIN set parent_coll_name = ? || substr(parent_coll_name, ? :: integer), coll_name = ? || substr(coll_name, ? :: integer) where substr(parent_coll_name,1,? :: integer) = ? or parent_coll_name = ?",
+                      &icss ); 
         if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO ) {
             status = 0;
-        }
+        } 
         if ( status != 0 ) {
             rodsLog( LOG_NOTICE,
                      "chlMoveObject cmlExecuteNoAnswerSql update failure %d",
@@ -11317,6 +11419,37 @@ irods::error db_move_object_op(
     }
 
     return ERROR( CAT_NOT_A_DATAOBJ_AND_NOT_A_COLLECTION, "invalid object or collection" );
+
+} // db_move_object_op
+
+irods::error db_move_object_op(
+    irods::plugin_context& _ctx,
+    rodsLong_t             _obj_id,
+    rodsLong_t             _target_coll_id ) {
+    // check the context
+    irods::error ret = _ctx.valid();
+    if ( !ret.ok() ) {
+        return PASS( ret );
+    }
+
+    // =-=-=-=-=-=-=-
+    // get a postgres object from the context
+    /*irods::postgres_object_ptr pg;
+    ret = make_db_ptr( _ctx.fco(), pg );
+    if ( !ret.ok() ) {
+        return PASS( ret );
+
+    }*/
+
+    // =-=-=-=-=-=-=-
+    // extract the icss property
+//        icatSessionStruct icss;
+//        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
+    std::function<irods::error()> tx = [&] () {
+        return _move_object(_ctx, _obj_id, _target_coll_id);
+    };
+    
+    return execTx(&icss, tx);
 
 } // db_move_object_op
 
@@ -14574,6 +14707,96 @@ irods::error db_general_update_op(
 
 } // db_general_update_op
 
+irods::error db_bulkreg_op(
+    irods::plugin_context& _ctx,
+    irods::Bulk*    _inp ) {
+    // =-=-=-=-=-=-=-
+    // check the context
+    irods::error ret = _ctx.valid();
+    if ( !ret.ok() ) {
+        return PASS( ret );
+    }
+
+    // =-=-=-=-=-=-=-
+    // check the params
+    if ( !_inp ) {
+        return ERROR( CAT_INVALID_ARGUMENT, "null parameter" );
+
+    }
+
+    std::function<irods::error()> tx = [&] () {
+        
+        rodsLog( LOG_NOTICE, "bulkreg started" );
+        int status = 0;
+        
+        auto sql1 = _inp->parallel?
+          "insert into r_coll_main (coll_id, parent_coll_name, coll_name, coll_owner_name, coll_owner_zone, coll_map_id, coll_inheritance, coll_type, coll_info1, coll_info2, coll_expiry_ts, r_comment, create_ts, modify_ts) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?) returning nothing":
+          "insert into r_coll_main (coll_id, parent_coll_name, coll_name, coll_owner_name, coll_owner_zone, coll_map_id, coll_inheritance, coll_type, coll_info1, coll_info2, coll_expiry_ts, r_comment, create_ts, modify_ts) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        auto sql2 = _inp->parallel?
+          "insert into r_data_main (data_id, coll_id, data_name, data_owner_name, data_owner_zone, data_map_id, data_repl_num, data_version, data_type_name, data_size, data_path, data_is_dirty, data_status, data_checksum, data_expiry_ts, data_mode, r_comment, create_ts, modify_ts, resc_id) select ?,coll_id,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? from r_coll_main where coll_name = ? returning nothing":
+          "insert into r_data_main (data_id, coll_id, data_name, data_owner_name, data_owner_zone, data_map_id, data_repl_num, data_version, data_type_name, data_size, data_path, data_is_dirty, data_status, data_checksum, data_expiry_ts, data_mode, r_comment, create_ts, modify_ts, resc_id) select ?,coll_id,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? from r_coll_main where coll_name = ?";
+        auto sql3 = _inp->parallel?
+          "insert into r_objt_access (object_id, user_id, access_type_id, create_ts, modify_ts) select ?,user_id,1200,?,? from r_user_main where user_name = ? and zone_name = ? returning nothing":
+          "insert into r_objt_access (object_id, user_id, access_type_id, create_ts, modify_ts) select ?,user_id,1200,?,? from r_user_main where user_name = ? and zone_name = ?";
+        
+        for(auto &collection : _inp->collections) {
+            auto id = cmlGetNextSeqVal(&icss);
+            if(id<0) {
+                status = id;
+                _rollback("db_bulkreg_op");
+                return ERROR( status, "db_bulkreg_op failed" ); 
+            }
+            std::vector<std::string> bindVars{std::to_string(id), collection.parent_coll_name, collection.coll_name, collection.coll_owner_name, collection.coll_owner_zone,std::to_string(collection.coll_map_id),collection.coll_inheritance,collection.coll_type,collection.coll_info1,collection.coll_info2,collection.coll_expiry_ts,collection.r_comment,collection.create_ts,collection.modify_ts};
+            status = cmlExecuteNoAnswerSqlBV(sql1, bindVars, &icss);
+            rodsLog( LOG_NOTICE, "bulkreg %s: %d", collection.coll_name.c_str(), status );
+            if(status<0 && !(_inp->parallel && status == CAT_SUCCESS_BUT_WITH_NO_INFO)) {
+                _rollback("db_bulkreg_op");
+                return ERROR( status, "db_bulkreg_op failed" ); 
+            }
+            std::vector<std::string> bindVars2{std::to_string(id), collection.create_ts,collection.modify_ts, collection.coll_owner_name, collection.coll_owner_zone};
+            status = cmlExecuteNoAnswerSqlBV(sql3, bindVars2, &icss);
+            rodsLog( LOG_NOTICE, "bulkreg access %s: %d", collection.coll_name.c_str(), status );
+            if(status<0 && !(_inp->parallel && status == CAT_SUCCESS_BUT_WITH_NO_INFO)) {
+                _rollback("db_bulkreg_op");
+                return ERROR( status, "db_bulkreg_op failed" ); 
+            }
+        }
+        
+        for(auto &data_object : _inp->data_objects) {
+            auto id = cmlGetNextSeqVal(&icss);
+            if(id<0) {
+                status = id;
+                _rollback("db_bulkreg_op");
+                return ERROR( status, "db_bulkreg_op failed" ); 
+            }
+            std::vector<std::string> bindVars{std::to_string(id), data_object.data_name, data_object.data_owner_name, data_object.data_owner_zone,std::to_string(data_object.data_map_id), std::to_string(data_object.data_repl_num), data_object.data_version, data_object.data_type_name, std::to_string(data_object.data_size), data_object.data_path, std::to_string(data_object.data_is_dirty), data_object.data_status,  data_object.data_checksum, data_object.data_expiry_ts, data_object.data_mode, data_object.r_comment, data_object.create_ts, data_object.modify_ts, std::to_string(data_object.resc_id), data_object.parent_coll_name};
+            status = cmlExecuteNoAnswerSqlBV(sql2, bindVars, &icss);
+            rodsLog( LOG_NOTICE, "bulkreg %s %s: %d", data_object.data_name.c_str(), data_object.parent_coll_name.c_str(), status );
+            if(status<0 && !(_inp->parallel && status == CAT_SUCCESS_BUT_WITH_NO_INFO)) {
+                _rollback("db_bulkreg_op");
+                return ERROR( status, "db_bulkreg_op failed" ); 
+            }
+            std::vector<std::string> bindVars2{std::to_string(id), data_object.create_ts,data_object.modify_ts, data_object.data_owner_name, data_object.data_owner_zone};
+            status = cmlExecuteNoAnswerSqlBV(sql3, bindVars2, &icss);
+            rodsLog( LOG_NOTICE, "bulkreg access %s %s: %d", data_object.data_name.c_str(), data_object.parent_coll_name.c_str(), status );
+            if(status<0 && !(_inp->parallel && status == CAT_SUCCESS_BUT_WITH_NO_INFO)) {
+                _rollback("db_bulkreg_op");
+                return ERROR( status, "db_bulkreg_op failed" ); 
+            }
+            
+        }
+        
+        
+        rodsLog( LOG_NOTICE, "bulkreg finished" );
+        
+         return SUCCESS();
+         
+    };
+    
+    return execTx(&icss, tx);
+
+} // db_bulkreg_op
+
 // =-=-=-=-=-=-=-
 //
 irods::error db_start_operation( irods::plugin_property_map& _props ) {
@@ -14965,6 +15188,10 @@ irods::database* plugin_factory(
         DATABASE_OP_GET_REPL_LIST_FOR_LEAF_BUNDLES,
         function<error(plugin_context&,rodsLong_t,size_t,const std::vector<leaf_bundle_t>*,dist_child_result_t*)>(
             db_get_repl_list_for_leaf_bundles_op));
+    pg->add_operation<irods::Bulk*>(
+        DATABASE_OP_BULKREG,
+        function<error(plugin_context&,irods::Bulk*)>(
+            db_bulkreg_op));
     return pg;
 
 } // plugin_factory

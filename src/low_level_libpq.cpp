@@ -313,13 +313,18 @@ irods::error execTx(const icatSessionStruct *icss, const boost::variant<std::fun
 
 int _execSql(PGconn *conn, const std::string &_sql, const std::vector<std::string> &bindVars, PGresult *&res) {
       rodsLog( LOG_DEBUG10, "%s", _sql.c_str() );
-      rodsLogSql( _sql.c_str() );
+      // rodsLogSql( _sql.c_str() );
 
       std::string sql = replaceLikesToSimilarTos(replaceParams(_sql));
 
       std::vector<const char *> bs;
       std::transform(bindVars.begin(), bindVars.end(), std::back_inserter(bs), [](const std::string &str){return str.c_str();});
+      
+//      rodsLog(LOG_NOTICE,
+//         "sql = %s", sql.c_str());
 
+//      std::for_each(std::begin(bs), std::end(bs), [](const char *param) { rodsLog(LOG_NOTICE,
+//                                                "param = %s", param);});
       res = PQexecParams( conn, sql.c_str(), bs.size(), NULL, bs.data(), NULL, NULL, 0 );
 
       return std::get<0>(processRes(sql, bindVars, res));

@@ -1531,7 +1531,7 @@ genqAppendAccessCheck() {
             cllBindVars[cllBindVarCount++] = accessControlZone;
             if ( !rstrcat( whereSQL, "R_DATA_MAIN.data_id in (select object_id from R_OBJT_ACCESS OA, R_USER_GROUP UG, R_USER_MAIN UM, R_TOKN_MAIN TM where UM.user_name=? and UM.zone_name=? and UM.user_type_name!='rodsgroup' and UM.user_id = UG.user_id and UG.group_user_id = OA.user_id"/*" and OA.object_id = R_DATA_MAIN.data_id"*/" and OA.access_type_id >= TM.token_id and TM.token_namespace ='access_type' and TM.token_name = 'read object')", MAX_SQL_SIZE_GQ ) ) { return USER_STRLEN_TOOLONG; }
         }
-        
+
         if ( strstr( selectSQL, "R_COLL_MAIN" ) != NULL ||
                 strstr( whereSQL, "R_COLL_MAIN" ) != NULL ) {
             if ( strlen( whereSQL ) > 6 ) {
@@ -1618,9 +1618,9 @@ generateSpecialQuery( genQueryInp_t genQueryInp, char *resultingSQL ) {
     static char userName[NAME_LEN] = "";
     static char userZone[NAME_LEN] = "";
 
-    char quotaQuery1[] = "( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_RESC_MAIN RM, R_USER_GROUP UG, R_USER_MAIN UM2 where QM.resc_id = RM.resc_id AND (QM.user_id = UG.group_user_id and UM2.user_name = ? and UM2.zone_name = ? and UG.user_id = UM2.user_id )) UNION ( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_USER_GROUP UG, R_USER_MAIN UM2, R_RESC_MAIN RM where QM.resc_id = '0' AND (QM.user_id = UG.group_user_id and UM2.user_name = ? and UM2.zone_name = ? and UG.user_id = UM2.user_id)) UNION ( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_USER_MAIN UM, R_RESC_MAIN RM WHERE (QM.resc_id = RM.resc_id or QM.resc_id = '0') AND (QM.user_id = UM.user_id and UM.user_name = ? and UM.zone_name = ? )) order by quota_over DESC";
+    char quotaQuery1[] = "( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_RESC_MAIN RM, R_USER_GROUP UG, R_USER_MAIN UM2 where QM.resc_id = RM.resc_id AND (QM.user_id = UG.group_user_id and UM2.user_name = ? and UM2.zone_name = ? and UG.user_id = UM2.user_id )) UNION ( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_USER_GROUP UG, R_USER_MAIN UM2, R_RESC_MAIN RM where QM.resc_id = 0 AND (QM.user_id = UG.group_user_id and UM2.user_name = ? and UM2.zone_name = ? and UG.user_id = UM2.user_id)) UNION ( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_USER_MAIN UM, R_RESC_MAIN RM WHERE (QM.resc_id = RM.resc_id or QM.resc_id = 0) AND (QM.user_id = UM.user_id and UM.user_name = ? and UM.zone_name = ? )) order by quota_over DESC";
 
-    char quotaQuery2[] = "( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_RESC_MAIN RM, R_USER_GROUP UG, R_USER_MAIN UM2 where QM.resc_id = RM.resc_id AND RM.resc_name = ? AND (QM.user_id = UG.group_user_id and UM2.user_name = ? and UM2.zone_name = ? and UG.user_id = UM2.user_id )) UNION ( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_USER_GROUP UG, R_USER_MAIN UM2, R_RESC_MAIN RM where QM.resc_id = '0' AND RM.resc_name = ? AND (QM.user_id = UG.group_user_id and UM2.user_name = ? and UM2.zone_name = ? and UG.user_id = UM2.user_id)) UNION ( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_USER_MAIN UM, R_RESC_MAIN RM WHERE (QM.resc_id = RM.resc_id or QM.resc_id = '0') AND RM.resc_name = ? AND (QM.user_id = UM.user_id and UM.user_name = ? and UM.zone_name = ? )) order by quota_over DESC";
+    char quotaQuery2[] = "( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_RESC_MAIN RM, R_USER_GROUP UG, R_USER_MAIN UM2 where QM.resc_id = RM.resc_id AND RM.resc_name = ? AND (QM.user_id = UG.group_user_id and UM2.user_name = ? and UM2.zone_name = ? and UG.user_id = UM2.user_id )) UNION ( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_USER_GROUP UG, R_USER_MAIN UM2, R_RESC_MAIN RM where QM.resc_id = 0 AND RM.resc_name = ? AND (QM.user_id = UG.group_user_id and UM2.user_name = ? and UM2.zone_name = ? and UG.user_id = UM2.user_id)) UNION ( select distinct QM.user_id, RM.resc_name, QM.quota_limit, QM.quota_over, QM.resc_id from R_QUOTA_MAIN QM, R_USER_MAIN UM, R_RESC_MAIN RM WHERE (QM.resc_id = RM.resc_id or QM.resc_id = 0) AND RM.resc_name = ? AND (QM.user_id = UM.user_id and UM.user_name = ? and UM.zone_name = ? )) order by quota_over DESC";
 
     int i, valid = 0;
     int cllCounter = cllBindVarCount;
@@ -2359,7 +2359,7 @@ int chl_gen_query_access_control_setup_impl(
         for ( j = 0; j < numOfCols; j++ ) {
             tResult2 = result->sqlResult[j].value; // ptr to value str
             tResult2 += currentMaxColSize * ( result->rowCnt - 1 );  // skip forward for this row
-            result_sets[statementNum]->get_value( j, tResult2, 
+            result_sets[statementNum]->get_value( j, tResult2,
                      currentMaxColSize ); // copy in the value text
         }
 

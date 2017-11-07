@@ -14729,15 +14729,18 @@ irods::error db_bulkreg_op(
         rodsLog( LOG_NOTICE, "bulkreg started" );
         int status = 0;
         
-        auto sql1 = _inp->parallel?
-          "insert into r_coll_main (coll_id, parent_coll_name, coll_name, coll_owner_name, coll_owner_zone, coll_map_id, coll_inheritance, coll_type, coll_info1, coll_info2, coll_expiry_ts, r_comment, create_ts, modify_ts) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?) returning nothing":
-          "insert into r_coll_main (coll_id, parent_coll_name, coll_name, coll_owner_name, coll_owner_zone, coll_map_id, coll_inheritance, coll_type, coll_info1, coll_info2, coll_expiry_ts, r_comment, create_ts, modify_ts) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
-        auto sql2 = _inp->parallel?
-          "insert into r_data_main (data_id, coll_id, data_name, data_owner_name, data_owner_zone, data_map_id, data_repl_num, data_version, data_type_name, data_size, data_path, data_is_dirty, data_status, data_checksum, data_expiry_ts, data_mode, r_comment, create_ts, modify_ts, resc_id) select ?,coll_id,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? from r_coll_main where coll_name = ? returning nothing":
-          "insert into r_data_main (data_id, coll_id, data_name, data_owner_name, data_owner_zone, data_map_id, data_repl_num, data_version, data_type_name, data_size, data_path, data_is_dirty, data_status, data_checksum, data_expiry_ts, data_mode, r_comment, create_ts, modify_ts, resc_id) select ?,coll_id,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? from r_coll_main where coll_name = ?";
-        auto sql3 = _inp->parallel?
-          "insert into r_objt_access (object_id, user_id, access_type_id, create_ts, modify_ts) select ?,user_id,1200,?,? from r_user_main where user_name = ? and zone_name = ? returning nothing":
-          "insert into r_objt_access (object_id, user_id, access_type_id, create_ts, modify_ts) select ?,user_id,1200,?,? from r_user_main where user_name = ? and zone_name = ?";
+        std::vector<std::string> sql0 {
+            "insert into r_coll_main (coll_id, parent_coll_name, coll_name, coll_owner_name, coll_owner_zone, coll_map_id, coll_inheritance, coll_type, coll_info1, coll_info2, coll_expiry_ts, r_comment, create_ts, modify_ts) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into r_data_main (data_id, coll_id, data_name, data_owner_name, data_owner_zone, data_map_id, data_repl_num, data_version, data_type_name, data_size, data_path, data_is_dirty, data_status, data_checksum, data_expiry_ts, data_mode, r_comment, create_ts, modify_ts, resc_id, resc_name) select ?,coll_id,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, resc_name from r_coll_main, r_resc_main where coll_name = ? and resc_id = ?",
+            "insert into r_objt_access (object_id, user_id, access_type_id, create_ts, modify_ts) select ?,user_id,1200,?,? from r_user_main where user_name = ? and zone_name = ?"
+        };
+        std::vector<std::string> sql;
+        
+        if(_inp->parallel) {
+            std::transform(std::begin(sql0), std::end(sql0), std::back_inserter(sql), [](const std::string &sqlstr) { return sqlstr + " returning nothing"; });
+        } else {
+            sql = sql0;
+        }
         
         for(auto &collection : _inp->collections) {
             auto id = cmlGetNextSeqVal(&icss);
@@ -14747,14 +14750,14 @@ irods::error db_bulkreg_op(
                 return ERROR( status, "db_bulkreg_op failed" ); 
             }
             std::vector<std::string> bindVars{std::to_string(id), collection.parent_coll_name, collection.coll_name, collection.coll_owner_name, collection.coll_owner_zone,std::to_string(collection.coll_map_id),collection.coll_inheritance,collection.coll_type,collection.coll_info1,collection.coll_info2,collection.coll_expiry_ts,collection.r_comment,collection.create_ts,collection.modify_ts};
-            status = cmlExecuteNoAnswerSqlBV(sql1, bindVars, &icss);
+            status = cmlExecuteNoAnswerSqlBV(sql[0].c_str(), bindVars, &icss);
             rodsLog( LOG_NOTICE, "bulkreg %s: %d", collection.coll_name.c_str(), status );
             if(status<0 && !(_inp->parallel && status == CAT_SUCCESS_BUT_WITH_NO_INFO)) {
                 _rollback("db_bulkreg_op");
                 return ERROR( status, "db_bulkreg_op failed" ); 
             }
             std::vector<std::string> bindVars2{std::to_string(id), collection.create_ts,collection.modify_ts, collection.coll_owner_name, collection.coll_owner_zone};
-            status = cmlExecuteNoAnswerSqlBV(sql3, bindVars2, &icss);
+            status = cmlExecuteNoAnswerSqlBV(sql[2].c_str(), bindVars2, &icss);
             rodsLog( LOG_NOTICE, "bulkreg access %s: %d", collection.coll_name.c_str(), status );
             if(status<0 && !(_inp->parallel && status == CAT_SUCCESS_BUT_WITH_NO_INFO)) {
                 _rollback("db_bulkreg_op");
@@ -14769,15 +14772,15 @@ irods::error db_bulkreg_op(
                 _rollback("db_bulkreg_op");
                 return ERROR( status, "db_bulkreg_op failed" ); 
             }
-            std::vector<std::string> bindVars{std::to_string(id), data_object.data_name, data_object.data_owner_name, data_object.data_owner_zone,std::to_string(data_object.data_map_id), std::to_string(data_object.data_repl_num), data_object.data_version, data_object.data_type_name, std::to_string(data_object.data_size), data_object.data_path, std::to_string(data_object.data_is_dirty), data_object.data_status,  data_object.data_checksum, data_object.data_expiry_ts, data_object.data_mode, data_object.r_comment, data_object.create_ts, data_object.modify_ts, std::to_string(data_object.resc_id), data_object.parent_coll_name};
-            status = cmlExecuteNoAnswerSqlBV(sql2, bindVars, &icss);
+            std::vector<std::string> bindVars{std::to_string(id), data_object.data_name, data_object.data_owner_name, data_object.data_owner_zone,std::to_string(data_object.data_map_id), std::to_string(data_object.data_repl_num), data_object.data_version, data_object.data_type_name, std::to_string(data_object.data_size), data_object.data_path, std::to_string(data_object.data_is_dirty), data_object.data_status,  data_object.data_checksum, data_object.data_expiry_ts, data_object.data_mode, data_object.r_comment, data_object.create_ts, data_object.modify_ts, std::to_string(data_object.resc_id), data_object.parent_coll_name, std::to_string(data_object.resc_id)};
+            status = cmlExecuteNoAnswerSqlBV(sql[1].c_str(), bindVars, &icss);
             rodsLog( LOG_NOTICE, "bulkreg %s %s: %d", data_object.data_name.c_str(), data_object.parent_coll_name.c_str(), status );
             if(status<0 && !(_inp->parallel && status == CAT_SUCCESS_BUT_WITH_NO_INFO)) {
                 _rollback("db_bulkreg_op");
                 return ERROR( status, "db_bulkreg_op failed" ); 
             }
             std::vector<std::string> bindVars2{std::to_string(id), data_object.create_ts,data_object.modify_ts, data_object.data_owner_name, data_object.data_owner_zone};
-            status = cmlExecuteNoAnswerSqlBV(sql3, bindVars2, &icss);
+            status = cmlExecuteNoAnswerSqlBV(sql[2].c_str(), bindVars2, &icss);
             rodsLog( LOG_NOTICE, "bulkreg access %s %s: %d", data_object.data_name.c_str(), data_object.parent_coll_name.c_str(), status );
             if(status<0 && !(_inp->parallel && status == CAT_SUCCESS_BUT_WITH_NO_INFO)) {
                 _rollback("db_bulkreg_op");

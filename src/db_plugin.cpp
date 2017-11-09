@@ -14714,9 +14714,9 @@ class Cache {
 public:
     Cache(std::function<irods::error(const Key &, Value &)> _retrieve) : retrieve_(_retrieve), cache_() { }
     irods::error get(const Key &_key, Value &_value) {
-        Value &value = cache_.find(_key);
+        auto value = cache_.find(_key);
         if(value != cache_.end()) {
-            _value = value;
+            _value = value->second;
             return SUCCESS();
         } else {
             irods::error ret = retrieve_(_key, cache_[_key]);

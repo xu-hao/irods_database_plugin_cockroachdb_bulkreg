@@ -39,6 +39,9 @@
 #include <boost/scope_exit.hpp>
 #include <boost/algorithm/string.hpp>
 
+#include <sys/types.h>
+#include <unistd.h>
+#include <fstream>
 
 int cllBindVarCount = 0;
 const char *cllBindVars[MAX_BIND_VARS];
@@ -196,6 +199,10 @@ std::tuple<int, std::string> processRes(const std::string &_sql, const std::vect
     	      }
     	  }
 
+        std::ofstream log("/tmp/sqllog." + std::to_string(getpid()), std::ofstream::out | std::ofstream::app);
+        log << "stat = " << std::endl;
+        log << "ncols = " << std::to_string(PQnfields(res)) << std::endl;
+        log << "nrows = " << std::to_string(PQntuples(res)) << std::endl;
         return std::make_tuple(result, "");
       }
       else {
@@ -204,7 +211,8 @@ std::tuple<int, std::string> processRes(const std::string &_sql, const std::vect
     		  PQresStatus(stat), _sql.c_str() );
     	  result = logPsgError( LOG_NOTICE, res );
         std::string stat = std::string(PQresultErrorField(res, PG_DIAG_SQLSTATE));
-
+        std::ofstream log("/tmp/sqllog." + std::to_string(getpid()), std::ofstream::out | std::ofstream::app);
+        log << "stat = " << stat << std::endl;
         return std::make_tuple(result, stat);
       }
 
@@ -212,6 +220,9 @@ std::tuple<int, std::string> processRes(const std::string &_sql, const std::vect
 
 std::tuple<int, std::string> _execTxSql(PGconn *conn, const std::string &_sql) {
   PGresult *res;
+  std::ofstream log("/tmp/sqllog." + std::to_string(getpid()), std::ofstream::out | std::ofstream::app);
+  log << "sql = " << _sql << std::endl;
+
   res = PQexec(conn, _sql.c_str());
   BOOST_SCOPE_EXIT (res) {
     PQclear(res);
@@ -320,12 +331,13 @@ int _execSql(PGconn *conn, const std::string &_sql, const std::vector<std::strin
       std::vector<const char *> bs;
       std::transform(bindVars.begin(), bindVars.end(), std::back_inserter(bs), [](const std::string &str){return str.c_str();});
       
-//      rodsLog(LOG_NOTICE,
-//         "sql = %s", sql.c_str());
+      std::ofstream log("/tmp/sqllog." + std::to_string(getpid()), std::ofstream::out | std::ofstream::app);
+      log << "sql = " << sql << std::endl;
 
-//      std::for_each(std::begin(bs), std::end(bs), [](const char *param) { rodsLog(LOG_NOTICE,
-//                                                "param = %s", param);});
+      std::for_each(std::begin(bs), std::end(bs), [&](const char *param) { log << "param = " << param << std::endl;});
       res = PQexecParams( conn, sql.c_str(), bs.size(), NULL, bs.data(), NULL, NULL, 0 );
+      
+      log.close();
 
       return std::get<0>(processRes(sql, bindVars, res));
 }

@@ -1958,9 +1958,9 @@ irods::error db_open_op(
         snprintf(icss.databasePassword, DB_PASSWORD_LEN, "%s", boost::any_cast<const std::string&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(irods::CFG_DB_PASSWORD_KW)).c_str());
         snprintf(icss.database_plugin_type, DB_TYPENAME_LEN, "%s", db_type.c_str());
 
-        const std::string& host = boost::any_cast<const std::string&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("db_host")));
-        const int& port = boost::any_cast<const int&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("db_port")));
-        const std::string& dbname = boost::any_cast<const std::string&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("db_name")));
+        const std::string host = boost::any_cast<const std::string&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("db_host")));
+        const int port = boost::any_cast<const int&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("db_port")));
+        const std::string dbname = boost::any_cast<const std::string&>(boost::any_cast<const std::unordered_map<std::string, boost::any>>(db_plugin).at(std::string("db_name")));
         // =-=-=-=-=-=-=-
 	// call open in mid level
 	rodsLong_t status = cmlOpen( &icss, host, port, dbname );
@@ -2629,6 +2629,17 @@ irods::error db_reg_data_obj_op(
                    "null parameter" );
     }
 
+    if ( logSQL != 0 ) {
+    rodsLog( LOG_SQL, "chlRegDataObj" );
+    }
+    if ( !icss.status ) {
+    return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
+    }
+
+    if ( logSQL != 0 ) {
+    rodsLog( LOG_SQL, "chlRegDataObj SQL 1 " );
+    }
+
     std::function<irods::error()> func = [&]() {
       // =-=-=-=-=-=-=-
       // get a postgres object from the context
@@ -2660,16 +2671,6 @@ irods::error db_reg_data_obj_op(
       rodsLong_t status;
       int inheritFlag;
 
-      if ( logSQL != 0 ) {
-	  rodsLog( LOG_SQL, "chlRegDataObj" );
-      }
-      if ( !icss.status ) {
-	  return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
-      }
-
-      if ( logSQL != 0 ) {
-	  rodsLog( LOG_SQL, "chlRegDataObj SQL 1 " );
-      }
 
       seqNum = cmlGetNextSeqVal( &icss );
       if ( seqNum < 0 ) {
@@ -2706,6 +2707,7 @@ irods::error db_reg_data_obj_op(
 	      errMsg << "no permission to update collection '" << logicalDirName << "'";
 	      addRErrorMsg( &_ctx.comm()->rError, 0, errMsg.str().c_str() );
 	  }
+      _rollback( "chlRegDataObj" );
 	  return ERROR( iVal, "" );
       }
       snprintf( collIdNum, MAX_NAME_LEN, "%lld", iVal );
@@ -2722,6 +2724,7 @@ irods::error db_reg_data_obj_op(
 		      &iVal, bindVars, &icss );
       }
       if ( status == 0 ) {
+          _rollback( "chlRegDataObj" );
 	  return ERROR( CAT_NAME_EXISTS_AS_COLLECTION, "collection exists" );
       }
 
@@ -2731,6 +2734,7 @@ irods::error db_reg_data_obj_op(
       status = cmlCheckNameToken( "data_type",
 				  _data_obj_info->dataType, &icss );
       if ( status != 0 ) {
+          _rollback( "chlRegDataObj" );
 	  return ERROR( CAT_INVALID_DATA_TYPE, "invalid data type" );
       }
 
@@ -2778,6 +2782,7 @@ irods::error db_reg_data_obj_op(
 		zone );
       if ( !ret.ok() ) {
 	  rodsLog( LOG_ERROR, "chlRegDataInfo - failed in getLocalZone with status [%d]", status );
+      _rollback( "chlRegDataObj" );
 	  return PASS( ret );
       }
 
@@ -2891,78 +2896,78 @@ irods::error db_reg_replica_op(
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
 
 
-    char myTime[50];
-    char logicalFileName[MAX_NAME_LEN];
-    char logicalDirName[MAX_NAME_LEN];
-    rodsLong_t iVal;
-    rodsLong_t status;
-    char tSQL[MAX_SQL_SIZE];
-    const char *cVal[30];
-    int i;
-    int statementNumber;
-    int nextReplNum;
-    char nextRepl[30];
-    char theColls[] = "data_id, \
-                       coll_id,  \
-                       data_name, \
-                       data_repl_num, \
-                       data_version, \
-                       data_type_name, \
-                       data_size, \
-                       resc_group_name, \
-                       resc_name, \
-                       resc_hier, \
-                       resc_id, \
-                       data_path, \
-                       data_owner_name, \
-                       data_owner_zone, \
-                       data_is_dirty, \
-                       data_status, \
-                       data_checksum, \
-                       data_expiry_ts, \
-                       data_map_id, \
-                       data_mode, \
-                       r_comment, \
-                       create_ts, \
-                       modify_ts";
-    const int IX_DATA_REPL_NUM = 3; /* index of data_repl_num in theColls */
-//        int IX_RESC_GROUP_NAME = 7; /* index into theColls */
-    const int IX_RESC_ID = 10;
-    const int IX_DATA_PATH = 11;    /* index into theColls */
-
-    const int IX_DATA_MODE = 19;
-    const int IX_CREATE_TS = 21;
-    const int IX_MODIFY_TS = 22;
-    const int IX_RESC_NAME2 = 23;
-    const int IX_DATA_PATH2 = 24;
-    const int IX_DATA_ID2 = 25;
-    int nColumns = 26;
-
-    char objIdString[MAX_NAME_LEN];
-    char replNumString[MAX_NAME_LEN];
-    int adminMode;
-    char *theVal;
-
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlRegReplica" );
-    }
-
-    adminMode = 0;
-    if ( _cond_input != NULL ) {
-        theVal = getValByKey( _cond_input, ADMIN_KW );
-        if ( theVal != NULL ) {
-            adminMode = 1;
-        }
-    }
-
-    if ( !icss.status ) {
-        return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
-    }
-
-    status = splitPathByKey( _src_data_obj_info->objPath,
-                             logicalDirName, MAX_NAME_LEN, logicalFileName, MAX_NAME_LEN, '/' );
-
     std::function<irods::error()> tx = [&]() {
+        char myTime[50];
+        char logicalFileName[MAX_NAME_LEN];
+        char logicalDirName[MAX_NAME_LEN];
+        rodsLong_t iVal;
+        rodsLong_t status;
+        char tSQL[MAX_SQL_SIZE];
+        const char *cVal[30];
+        int i;
+        int statementNumber;
+        int nextReplNum;
+        char nextRepl[30];
+        char theColls[] = "data_id, \
+                           coll_id,  \
+                           data_name, \
+                           data_repl_num, \
+                           data_version, \
+                           data_type_name, \
+                           data_size, \
+                           resc_group_name, \
+                           resc_name, \
+                           resc_hier, \
+                           resc_id, \
+                           data_path, \
+                           data_owner_name, \
+                           data_owner_zone, \
+                           data_is_dirty, \
+                           data_status, \
+                           data_checksum, \
+                           data_expiry_ts, \
+                           data_map_id, \
+                           data_mode, \
+                           r_comment, \
+                           create_ts, \
+                           modify_ts";
+        const int IX_DATA_REPL_NUM = 3; /* index of data_repl_num in theColls */
+    //        int IX_RESC_GROUP_NAME = 7; /* index into theColls */
+        const int IX_RESC_ID = 10;
+        const int IX_DATA_PATH = 11;    /* index into theColls */
+
+        const int IX_DATA_MODE = 19;
+        const int IX_CREATE_TS = 21;
+        const int IX_MODIFY_TS = 22;
+        const int IX_RESC_NAME2 = 23;
+        const int IX_DATA_PATH2 = 24;
+        const int IX_DATA_ID2 = 25;
+        int nColumns = 26;
+
+        char objIdString[MAX_NAME_LEN];
+        char replNumString[MAX_NAME_LEN];
+        int adminMode;
+        char *theVal;
+
+        if ( logSQL != 0 ) {
+            rodsLog( LOG_SQL, "chlRegReplica" );
+        }
+
+        adminMode = 0;
+        if ( _cond_input != NULL ) {
+            theVal = getValByKey( _cond_input, ADMIN_KW );
+            if ( theVal != NULL ) {
+                adminMode = 1;
+            }
+        }
+
+        if ( !icss.status ) {
+            return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
+        }
+
+        status = splitPathByKey( _src_data_obj_info->objPath,
+                                 logicalDirName, MAX_NAME_LEN, logicalFileName, MAX_NAME_LEN, '/' );
+
       if ( adminMode ) {
 	  if ( _ctx.comm()->clientUser.authInfo.authFlag != LOCAL_PRIV_USER_AUTH ) {
 	      return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
@@ -3116,45 +3121,45 @@ irods::error db_unreg_replica_op(
 
     // =-=-=-=-=-=-=-
     //
-    char logicalFileName[MAX_NAME_LEN];
-    char logicalDirName[MAX_NAME_LEN];
-    rodsLong_t status;
-    char tSQL[MAX_SQL_SIZE];
-    char replNumber[30];
-    char dataObjNumber[30];
-    char cVal[MAX_NAME_LEN];
-    int adminMode;
-    int trashMode;
-    char *theVal;
-    char checkPath[MAX_NAME_LEN];
-
-    dataObjNumber[0] = '\0';
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlUnregDataObj" );
-    }
-
-    if ( !icss.status ) {
-        return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
-    }
-
-    adminMode = 0;
-    trashMode = 0;
-    if ( _cond_input != NULL ) {
-        theVal = getValByKey( _cond_input, ADMIN_KW );
-        if ( theVal != NULL ) {
-            adminMode = 1;
-        }
-        theVal = getValByKey( _cond_input, ADMIN_RMTRASH_KW );
-        if ( theVal != NULL ) {
-            adminMode = 1;
-            trashMode = 1;
-        }
-    }
-
-    status = splitPathByKey( _data_obj_info->objPath,
-                             logicalDirName, MAX_NAME_LEN, logicalFileName, MAX_NAME_LEN, '/' );
-
     std::function<irods::error()> tx = [&]() {
+        char logicalFileName[MAX_NAME_LEN];
+        char logicalDirName[MAX_NAME_LEN];
+        rodsLong_t status;
+        char tSQL[MAX_SQL_SIZE];
+        char replNumber[30];
+        char dataObjNumber[30];
+        char cVal[MAX_NAME_LEN];
+        int adminMode;
+        int trashMode;
+        char *theVal;
+        char checkPath[MAX_NAME_LEN];
+
+        dataObjNumber[0] = '\0';
+        if ( logSQL != 0 ) {
+            rodsLog( LOG_SQL, "chlUnregDataObj" );
+        }
+
+        if ( !icss.status ) {
+            return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
+        }
+
+        adminMode = 0;
+        trashMode = 0;
+        if ( _cond_input != NULL ) {
+            theVal = getValByKey( _cond_input, ADMIN_KW );
+            if ( theVal != NULL ) {
+                adminMode = 1;
+            }
+            theVal = getValByKey( _cond_input, ADMIN_RMTRASH_KW );
+            if ( theVal != NULL ) {
+                adminMode = 1;
+                trashMode = 1;
+            }
+        }
+
+        status = splitPathByKey( _data_obj_info->objPath,
+                                 logicalDirName, MAX_NAME_LEN, logicalFileName, MAX_NAME_LEN, '/' );
+
       if ( adminMode == 0 ) {
 	  /* Check the access to the dataObj */
 	  if ( logSQL != 0 ) {
@@ -3360,23 +3365,23 @@ irods::error db_reg_rule_exec_op(
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
 
-    char myTime[50];
-    rodsLong_t seqNum;
-    char ruleExecIdNum[MAX_NAME_LEN];
-    rodsLong_t status;
-
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlRegRuleExec" );
-    }
-    if ( !icss.status ) {
-        return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
-    }
-
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlRegRuleExec SQL 1 " );
-    }
-
     std::function<irods::error()> tx = [&]() {
+        char myTime[50];
+        rodsLong_t seqNum;
+        char ruleExecIdNum[MAX_NAME_LEN];
+        rodsLong_t status;
+
+        if ( logSQL != 0 ) {
+            rodsLog( LOG_SQL, "chlRegRuleExec" );
+        }
+        if ( !icss.status ) {
+            return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
+        }
+
+        if ( logSQL != 0 ) {
+            rodsLog( LOG_SQL, "chlRegRuleExec SQL 1 " );
+        }
+
       seqNum = cmlGetNextSeqVal( &icss );
       if ( seqNum < 0 ) {
 	  rodsLog( LOG_NOTICE, "chlRegRuleExec cmlGetNextSeqVal failure %d",
@@ -3466,35 +3471,35 @@ irods::error db_mod_rule_exec_op(
 
     // =-=-=-=-=-=-=-
     //
-    int i, j, status;
-
-    char tSQL[MAX_SQL_SIZE];
-    char *theVal = 0;
-
-    /* regParamNames has the argument names (in regParam) that this
-       routine understands and colNames has the corresponding column
-       names; one for one. */
-    char *regParamNames[] = {
-        RULE_NAME_KW, RULE_REI_FILE_PATH_KW, RULE_USER_NAME_KW,
-        RULE_EXE_ADDRESS_KW, RULE_EXE_TIME_KW,
-        RULE_EXE_FREQUENCY_KW, RULE_PRIORITY_KW, RULE_ESTIMATE_EXE_TIME_KW,
-        RULE_NOTIFICATION_ADDR_KW, RULE_LAST_EXE_TIME_KW,
-        RULE_EXE_STATUS_KW,
-        "END"
-    };
-    char *colNames[] = {
-        "rule_name", "rei_file_path", "user_name",
-        "exe_address", "exe_time", "exe_frequency", "priority",
-        "estimated_exe_time", "notification_addr",
-        "last_exe_time", "exe_status",
-        "create_ts", "modify_ts",
-    };
-
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlModRuleExec" );
-    }
-
     std::function<irods::error()> tx = [&]() {
+        int i, j, status;
+
+        char tSQL[MAX_SQL_SIZE];
+        char *theVal = 0;
+
+        /* regParamNames has the argument names (in regParam) that this
+           routine understands and colNames has the corresponding column
+           names; one for one. */
+        char *regParamNames[] = {
+            RULE_NAME_KW, RULE_REI_FILE_PATH_KW, RULE_USER_NAME_KW,
+            RULE_EXE_ADDRESS_KW, RULE_EXE_TIME_KW,
+            RULE_EXE_FREQUENCY_KW, RULE_PRIORITY_KW, RULE_ESTIMATE_EXE_TIME_KW,
+            RULE_NOTIFICATION_ADDR_KW, RULE_LAST_EXE_TIME_KW,
+            RULE_EXE_STATUS_KW,
+            "END"
+        };
+        char *colNames[] = {
+            "rule_name", "rei_file_path", "user_name",
+            "exe_address", "exe_time", "exe_frequency", "priority",
+            "estimated_exe_time", "notification_addr",
+            "last_exe_time", "exe_status",
+            "create_ts", "modify_ts",
+        };
+
+        if ( logSQL != 0 ) {
+            rodsLog( LOG_SQL, "chlModRuleExec" );
+        }
+
       snprintf( tSQL, MAX_SQL_SIZE, "update R_RULE_EXEC set " );
 
       for ( i = 0, j = 0; strcmp( regParamNames[i], "END" ); i++ ) {
@@ -3572,16 +3577,16 @@ irods::error db_del_rule_exec_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    char userName[MAX_NAME_LEN + 2];
-
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlDelRuleExec" );
-    }
-
-    if ( !icss.status ) {
-        return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
-    }
     std::function<irods::error()> tx = [&]() {
+        char userName[MAX_NAME_LEN + 2];
+
+        if ( logSQL != 0 ) {
+            rodsLog( LOG_SQL, "chlDelRuleExec" );
+        }
+
+        if ( !icss.status ) {
+            return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
+        }
 
       if ( _ctx.comm()->proxyUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
 	  if ( _ctx.comm()->proxyUser.authInfo.authFlag == LOCAL_USER_AUTH ) {
@@ -3836,54 +3841,54 @@ irods::error db_reg_resc_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    rodsLong_t seqNum;
-    char idNum[MAX_SQL_SIZE];
-    rodsLong_t status;
-    char myTime[50];
-
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlRegResc" );
-    }
-
-    // =-=-=-=-=-=-=-
-    // error trap empty resc name
-    if ( resc_input[irods::RESOURCE_NAME].length() < 1 ) {
-        addRErrorMsg( &_ctx.comm()->rError, 0, "resource name is empty" );
-        return ERROR( CAT_INVALID_RESOURCE_NAME, "resource name is empty" );
-    }
-
-    // =-=-=-=-=-=-=-
-    // error trap empty resc type
-    if ( resc_input[irods::RESOURCE_TYPE].length() < 1 ) {
-        addRErrorMsg( &_ctx.comm()->rError, 0, "resource type is empty" );
-        return ERROR( CAT_INVALID_RESOURCE_TYPE, "resource type is empty" );
-    }
-
-    if ( !icss.status ) {
-        return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
-    }
-
-    if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-        return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
-    }
-    if ( _ctx.comm()->proxyUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-        return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege level" );
-    }
-
-    // =-=-=-=-=-=-=-
-    // Validate resource name format
-    ret = validate_resource_name( resc_input[irods::RESOURCE_NAME] );
-    if ( !ret.ok() ) {
-        irods::log( ret );
-        return PASS( ret );
-    }
-    // =-=-=-=-=-=-=-
-
-
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlRegResc SQL 1 " );
-    }
     std::function<irods::error()> tx = [&]() {
+        rodsLong_t seqNum;
+        char idNum[MAX_SQL_SIZE];
+        rodsLong_t status;
+        char myTime[50];
+
+        if ( logSQL != 0 ) {
+            rodsLog( LOG_SQL, "chlRegResc" );
+        }
+
+        // =-=-=-=-=-=-=-
+        // error trap empty resc name
+        if ( resc_input[irods::RESOURCE_NAME].length() < 1 ) {
+            addRErrorMsg( &_ctx.comm()->rError, 0, "resource name is empty" );
+            return ERROR( CAT_INVALID_RESOURCE_NAME, "resource name is empty" );
+        }
+
+        // =-=-=-=-=-=-=-
+        // error trap empty resc type
+        if ( resc_input[irods::RESOURCE_TYPE].length() < 1 ) {
+            addRErrorMsg( &_ctx.comm()->rError, 0, "resource type is empty" );
+            return ERROR( CAT_INVALID_RESOURCE_TYPE, "resource type is empty" );
+        }
+
+        if ( !icss.status ) {
+            return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
+        }
+
+        if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+            return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
+        }
+        if ( _ctx.comm()->proxyUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+            return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege level" );
+        }
+
+        // =-=-=-=-=-=-=-
+        // Validate resource name format
+        ret = validate_resource_name( resc_input[irods::RESOURCE_NAME] );
+        if ( !ret.ok() ) {
+            irods::log( ret );
+            return PASS( ret );
+        }
+        // =-=-=-=-=-=-=-
+
+
+        if ( logSQL != 0 ) {
+            rodsLog( LOG_SQL, "chlRegResc SQL 1 " );
+        }
 
       seqNum = cmlGetNextSeqVal( &icss );
       if ( seqNum < 0 ) {
@@ -3985,49 +3990,49 @@ irods::error db_del_child_resc_op(
     }
 
     irods::sql_logger logger( "chlDelChildResc", logSQL );
-    std::string child_string( resc_input[irods::RESOURCE_CHILDREN] );
-
-    std::string& parent_name = resc_input[irods::RESOURCE_NAME];
-    std::string parent_resource_id;
-    std::string parent_parent_name;
-    ret = extract_resource_properties_for_operations(
-              parent_name,
-              parent_resource_id,
-              parent_parent_name);
-    if(!ret.ok()) {
-           return PASS(ret);
-    }
-
-    irods::children_parser parser;
-    parser.set_string( child_string );
-
-    std::string child_name;
-    parser.first_child( child_name );
-
-    std::string child_resource_id;
-    std::string child_parent_name;
-    ret = extract_resource_properties_for_operations(
-              child_name,
-              child_resource_id,
-              child_parent_name);
-    if(!ret.ok()) {
-           return PASS(ret);
-    }
-
-    rodsLong_t status = _canConnectToCatalog( _ctx.comm() );
-    if(0 != status) {
-        return ERROR(
-                   status,
-                   "_canConnectToCatalog failed");
-    }
-
-    std::string zone;
-    ret = getLocalZone( _ctx.prop_map(), &icss, zone );
-    if(!ret.ok()) {
-        return PASS(ret);
-    }
-
     std::function<irods::error()> tx = [&]() {
+        std::string child_string( resc_input[irods::RESOURCE_CHILDREN] );
+
+        std::string& parent_name = resc_input[irods::RESOURCE_NAME];
+        std::string parent_resource_id;
+        std::string parent_parent_name;
+        ret = extract_resource_properties_for_operations(
+                  parent_name,
+                  parent_resource_id,
+                  parent_parent_name);
+        if(!ret.ok()) {
+               return PASS(ret);
+        }
+
+        irods::children_parser parser;
+        parser.set_string( child_string );
+
+        std::string child_name;
+        parser.first_child( child_name );
+
+        std::string child_resource_id;
+        std::string child_parent_name;
+        ret = extract_resource_properties_for_operations(
+                  child_name,
+                  child_resource_id,
+                  child_parent_name);
+        if(!ret.ok()) {
+               return PASS(ret);
+        }
+
+        rodsLong_t status = _canConnectToCatalog( _ctx.comm() );
+        if(0 != status) {
+            return ERROR(
+                       status,
+                       "_canConnectToCatalog failed");
+        }
+
+        std::string zone;
+        ret = getLocalZone( _ctx.prop_map(), &icss, zone );
+        if(!ret.ok()) {
+            return PASS(ret);
+        }
+
       ret = _updateChildParent(
 		child_resource_id,
 		std::string(""),
@@ -4084,36 +4089,36 @@ irods::error db_del_resc_op(
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
 
-    rodsLong_t status;
-    char rescId[MAX_NAME_LEN];
-
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlDelResc" );
-    }
-
-    if ( !icss.status ) {
-        return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
-    }
-
-    if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-        return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
-    }
-    if ( _ctx.comm()->proxyUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
-        return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
-    }
-
-    // =-=-=-=-=-=-=-
-    // JMC - backport 4629
-    if ( strncmp( _resc_name, BUNDLE_RESC, strlen( BUNDLE_RESC ) ) == 0 ) {
-        char errMsg[155];
-        snprintf( errMsg, 150,
-                  "%s is a built-in resource needed for bundle operations.",
-                  BUNDLE_RESC );
-        addRErrorMsg( &_ctx.comm()->rError, 0, errMsg );
-        return ERROR( CAT_PSEUDO_RESC_MODIFY_DISALLOWED, "cannot delete bundle resc" );
-    }
-    // =-=-=-=-=-=-=-
     std::function<irods::error()> tx = [&]() {
+        rodsLong_t status;
+        char rescId[MAX_NAME_LEN];
+
+        if ( logSQL != 0 ) {
+            rodsLog( LOG_SQL, "chlDelResc" );
+        }
+
+        if ( !icss.status ) {
+            return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
+        }
+
+        if ( _ctx.comm()->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+            return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
+        }
+        if ( _ctx.comm()->proxyUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH ) {
+            return ERROR( CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "insufficient privilege" );
+        }
+
+        // =-=-=-=-=-=-=-
+        // JMC - backport 4629
+        if ( strncmp( _resc_name, BUNDLE_RESC, strlen( BUNDLE_RESC ) ) == 0 ) {
+            char errMsg[155];
+            snprintf( errMsg, 150,
+                      "%s is a built-in resource needed for bundle operations.",
+                      BUNDLE_RESC );
+            addRErrorMsg( &_ctx.comm()->rError, 0, errMsg );
+            return ERROR( CAT_PSEUDO_RESC_MODIFY_DISALLOWED, "cannot delete bundle resc" );
+        }
+        // =-=-=-=-=-=-=-
 
       bool has_data = true; // default to error case
       status = _rescHasData( &icss, _resc_name, has_data );
@@ -4728,39 +4733,39 @@ irods::error db_reg_coll_op(
     // extract the icss property
 //        icatSessionStruct icss;
 //        _ctx.prop_map().get< icatSessionStruct >( ICSS_PROP, icss );
-    char myTime[50];
-    char logicalEndName[MAX_NAME_LEN];
-    char logicalParentDirName[MAX_NAME_LEN];
-    rodsLong_t iVal;
-    char collIdNum[MAX_NAME_LEN];
-    char nextStr[MAX_NAME_LEN];
-    char currStr2[MAX_SQL_SIZE];
-    rodsLong_t status;
-    char tSQL[MAX_SQL_SIZE];
-    int inheritFlag;
-
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlRegColl" );
-    }
-
-    if ( !icss.status ) {
-        return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
-    }
-
-    status = splitPathByKey( _coll_info->collName,
-                             logicalParentDirName, MAX_NAME_LEN, logicalEndName, MAX_NAME_LEN, '/' );
-
-    if ( strlen( logicalParentDirName ) == 0 ) {
-        snprintf( logicalParentDirName, sizeof( logicalParentDirName ), "%s", PATH_SEPARATOR );
-        snprintf( logicalEndName, sizeof( logicalEndName ), "%s", _coll_info->collName + 1 );
-    }
-
-    /* Check that the parent collection exists and user has write permission,
-       and get the collectionID.  Also get the inherit flag */
-    if ( logSQL != 0 ) {
-        rodsLog( LOG_SQL, "chlRegColl SQL 1 " );
-    }
     std::function<irods::error()> tx = [&]() {
+        char myTime[50];
+        char logicalEndName[MAX_NAME_LEN];
+        char logicalParentDirName[MAX_NAME_LEN];
+        rodsLong_t iVal;
+        char collIdNum[MAX_NAME_LEN];
+        char nextStr[MAX_NAME_LEN];
+        char currStr2[MAX_SQL_SIZE];
+        rodsLong_t status;
+        char tSQL[MAX_SQL_SIZE];
+        int inheritFlag;
+
+        if ( logSQL != 0 ) {
+            rodsLog( LOG_SQL, "chlRegColl" );
+        }
+
+        if ( !icss.status ) {
+            return ERROR( CATALOG_NOT_CONNECTED, "catalog not connected" );
+        }
+
+        status = splitPathByKey( _coll_info->collName,
+                                 logicalParentDirName, MAX_NAME_LEN, logicalEndName, MAX_NAME_LEN, '/' );
+
+        if ( strlen( logicalParentDirName ) == 0 ) {
+            snprintf( logicalParentDirName, sizeof( logicalParentDirName ), "%s", PATH_SEPARATOR );
+            snprintf( logicalEndName, sizeof( logicalEndName ), "%s", _coll_info->collName + 1 );
+        }
+
+        /* Check that the parent collection exists and user has write permission,
+           and get the collectionID.  Also get the inherit flag */
+        if ( logSQL != 0 ) {
+            rodsLog( LOG_SQL, "chlRegColl SQL 1 " );
+        }
 
       status = cmlCheckDirAndGetInheritFlag( logicalParentDirName,
 					    _ctx.comm()->clientUser.userName,

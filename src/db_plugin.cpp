@@ -1579,7 +1579,7 @@ int setOverQuota( rsComm_t *rsComm ) {
     if ( status2 != 0 ) {
       return status2;
     }
-    if ( status == CAT_NO_ROWS_FOUND ) {
+    if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO || status == CAT_NO_ROWS_FOUND) {
       status = 0;    /* none */
     }
     if ( status != 0 ) {
@@ -1655,7 +1655,7 @@ int setOverQuota( rsComm_t *rsComm ) {
             return status2;
         }
     }
-    if ( status == CAT_NO_ROWS_FOUND ) {
+    if ( status == CAT_SUCCESS_BUT_WITH_NO_INFO || status == CAT_NO_ROWS_FOUND ) {
         status = 0;
     }
     if ( status != 0 ) {

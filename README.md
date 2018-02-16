@@ -5,4 +5,4 @@
 
 install the following:
 
-https://github.com/xu-hao/irods_cockroach_common
+https://github.com/xu-hao/irods_bulkreg_common

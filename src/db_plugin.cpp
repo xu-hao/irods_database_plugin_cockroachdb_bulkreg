@@ -50,8 +50,8 @@
 #include "irods_lexical_cast.hpp"
 #include "low_level.hpp"
 #include <boost/scope_exit.hpp>
-#include "irods_database_plugin_cockroachdb_constants.hpp"
-#include "irods_database_plugin_cockroachdb_structs.hpp"
+#include "irods_api_plugin_bulkreg_constants.hpp"
+#include "irods_api_plugin_bulkreg_structs.hpp"
 #include <map>
 
 using leaf_bundle_t = irods::resource_manager::leaf_bundle_t;

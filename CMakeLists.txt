@@ -6,7 +6,7 @@ set(CMAKE_C_COMPILER ${IRODS_EXTERNALS_FULLPATH_CLANG}/bin/clang)
 set(CMAKE_CXX_COMPILER ${IRODS_EXTERNALS_FULLPATH_CLANG}/bin/clang++)
 set(CMAKE_EXE_LINKER_FLAGS_INIT "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
 
-project(irods_database_plugin-cockroachdb CXX)
+project(irods_database_plugin-cockroachdb-bulkreg CXX)
 
 include(${IRODS_TARGETS_PATH})
 
@@ -38,41 +38,25 @@ link_libraries(c++abi)
 include_directories(${IRODS_EXTERNALS_FULLPATH_CLANG}/include/c++/v1)
 
 set(
-  IRODS_DATABASE_PLUGIN_COMPILE_DEFINITIONS_cockroachdb
+  IRODS_DATABASE_PLUGIN_COMPILE_DEFINITIONS_cockroachdb_bulkreg
   )
 
 set(
   IRODS_DATABASE_PLUGINS
-  cockroachdb
+  cockroachdb_bulkreg
   )
 
-configure_file(
-  ${CMAKE_SOURCE_DIR}/src/icatSysTables.sql.pp.in
-  ${CMAKE_BINARY_DIR}/src/icatSysTables.sql.pp
-  @ONLY
+link_directories(
+  /${IRODS_PLUGINS_DIRECTORY}/database
   )
-
+    
 foreach(PLUGIN ${IRODS_DATABASE_PLUGINS})
   string(TOUPPER ${PLUGIN} PLUGIN_UPPERCASE)
 
-  add_custom_command(
-    OUTPUT ${CMAKE_BINARY_DIR}/icatSysTables_${PLUGIN}.sql
-    COMMAND cpp -E -P -D${PLUGIN} ${CMAKE_BINARY_DIR}/src/icatSysTables.sql.pp ${CMAKE_BINARY_DIR}/icatSysTables_${PLUGIN}.sql
-    MAIN_DEPENDENCY ${CMAKE_BINARY_DIR}/src/icatSysTables.sql.pp
-    )
-  add_custom_target(IRODS_PHONY_TARGET_icatSysTables_${PLUGIN}.sql ALL DEPENDS ${CMAKE_BINARY_DIR}/icatSysTables_${PLUGIN}.sql) # Forces execution of custom_command
-
   add_library(
     ${PLUGIN}
-    MODULE
+    SHARED
     ${CMAKE_SOURCE_DIR}/src/db_plugin.cpp
-    ${CMAKE_SOURCE_DIR}/src/general_query.cpp
-    ${CMAKE_SOURCE_DIR}/src/general_query_setup.cpp
-    ${CMAKE_SOURCE_DIR}/src/general_update.cpp
-    ${CMAKE_SOURCE_DIR}/src/irods_catalog_properties.cpp
-    ${CMAKE_SOURCE_DIR}/src/irods_sql_logger.cpp
-    ${CMAKE_SOURCE_DIR}/src/low_level_libpq.cpp
-    ${CMAKE_SOURCE_DIR}/src/mid_level_routines.cpp
     )
 
   target_include_directories(
@@ -80,7 +64,7 @@ foreach(PLUGIN ${IRODS_DATABASE_PLUGINS})
     PRIVATE
     /usr/include/irods
     /usr/include/postgresql
-    ${CMAKE_SOURCE_DIR}/include
+    /usr/include/irods/cockroachdb
     ${IRODS_EXTERNALS_FULLPATH_BOOST}/include
     ${IRODS_EXTERNALS_FULLPATH_JANSSON}/include
     ${IRODS_EXTERNALS_FULLPATH_AVRO}/include/
@@ -92,8 +76,7 @@ foreach(PLUGIN ${IRODS_DATABASE_PLUGINS})
     irods_server
     irods_plugin_dependencies
     irods_common
-    ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_system.so
-    ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_regex.so
+    cockroachdb
     pq
     )
 
@@ -109,43 +92,9 @@ foreach(PLUGIN ${IRODS_DATABASE_PLUGINS})
     COMPONENT ${IRODS_PACKAGE_COMPONENT_${PLUGIN_UPPERCASE}_NAME}
     )
 
-  install(
-    FILES
-    ${CMAKE_SOURCE_DIR}/${PLUGIN}/upgrade-3.3.xto4.0.0.sql
-    DESTINATION ${IRODS_HOME_DIRECTORY}/packaging
-    COMPONENT ${IRODS_PACKAGE_COMPONENT_${PLUGIN_UPPERCASE}_NAME}
-    )
-
-  install(
-    FILES
-    ${CMAKE_SOURCE_DIR}/packaging/localhost_setup_${PLUGIN}.input
-    DESTINATION ${IRODS_HOME_DIRECTORY}/packaging
-    COMPONENT ${IRODS_PACKAGE_COMPONENT_${PLUGIN_UPPERCASE}_NAME}
-    PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
-    )
-
-  install(
-    FILES
-    ${CMAKE_SOURCE_DIR}/src/icatDropSysTables.sql
-    ${CMAKE_SOURCE_DIR}/src/icatSysInserts.sql
-    ${CMAKE_SOURCE_DIR}/src/icatPurgeRecycleBin.sql
-    DESTINATION ${IRODS_HOME_DIRECTORY}/packaging/sql
-    COMPONENT ${IRODS_PACKAGE_COMPONENT_${PLUGIN_UPPERCASE}_NAME}
-    PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
-    )
-
-  install(
-    FILES
-    ${CMAKE_BINARY_DIR}/icatSysTables_${PLUGIN}.sql
-    DESTINATION ${IRODS_HOME_DIRECTORY}/packaging/sql
-    COMPONENT ${IRODS_PACKAGE_COMPONENT_${PLUGIN_UPPERCASE}_NAME}
-    RENAME icatSysTables.sql
-    PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
-    )
-
 endforeach()
 
-set(CPACK_PACKAGE_FILE_NAME "irods-database-plugin-cockroachdb${IRODS_PACKAGE_FILE_NAME_SUFFIX}")
+set(CPACK_PACKAGE_FILE_NAME "irods-database-plugin-cockroachdb-bulkreg${IRODS_PACKAGE_FILE_NAME_SUFFIX}")
 
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 set(CPACK_COMPONENT_INCLUDE_TOPLEVEL_DIRECTORY OFF)
@@ -174,17 +123,16 @@ set(CPACK_RPM_PACKAGE_URL "https://irods.org")
 set(CPACK_RPM_PACKAGE_AUTOREQ 0)
 set(CPACK_RPM_PACKAGE_AUTOPROV 0)
 
-set(CPACK_RPM_PRE_INSTALL_SCRIPT_FILE "${CMAKE_SOURCE_DIR}/packaging/preinst")
-set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE "${CMAKE_SOURCE_DIR}/packaging/postinst")
-set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE "${CMAKE_SOURCE_DIR}/packaging/postrm")
+# set(CPACK_RPM_PRE_INSTALL_SCRIPT_FILE "${CMAKE_SOURCE_DIR}/packaging/preinst")
+# set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE "${CMAKE_SOURCE_DIR}/packaging/postinst")
+# set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE "${CMAKE_SOURCE_DIR}/packaging/postrm")
 
 set(CPACK_ARCHIVE_COMPONENT_INSTALL OFF)
 
-set(CPACK_DEBIAN_PACKAGE_NAME "irods-database-plugin-cockroachdb")
+set(CPACK_DEBIAN_PACKAGE_NAME "irods-database-plugin-cockroachdb-bulkreg")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "${IRODS_PACKAGE_DEPENDENCIES_STRING}, irods-runtime (= ${IRODS_VERSION}), irods-server (= ${IRODS_VERSION}), libpq5, super, libc6")
-set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_SOURCE_DIR}/packaging/preinst;${CMAKE_SOURCE_DIR}/packaging/postinst;${CMAKE_SOURCE_DIR}/packaging/postrm;")
 
-set(CPACK_RPM_PACKAGE_NAME "irods-database-plugin-cockroachdb")
+set(CPACK_RPM_PACKAGE_NAME "irods-database-plugin-cockroachdb-bulkreg")
 if (IRODS_LINUX_DISTRIBUTION_NAME STREQUAL "centos" OR IRODS_LINUX_DISTRIBUTION_NAME STREQUAL "centos linux")
   set(CPACK_RPM_PACKAGE_REQUIRES "${IRODS_PACKAGE_DEPENDENCIES_STRING}, irods-runtime = ${IRODS_VERSION}, openssl, python-devel")
 elseif (IRODS_LINUX_DISTRIBUTION_NAME STREQUAL "opensuse")
